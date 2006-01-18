@@ -1,3 +1,16 @@
+Version 1.1, 2006-01-18
+-----------------------
+
+- Add capability to rotate pages.
+
+- Improved PDF reading support to properly manage inherited attributes from
+  /Type=/Pages nodes.  This means that page groups that are rotated or have
+  different media boxes or whatever will now work properly.
+
+- Added PDF 1.5 support.  Namely cross-reference streams and object streams.
+  This release can mangle Adobe's PDFReference16.pdf successfully.
+
+
 Version 1.0, 2006-01-17
 -----------------------
 

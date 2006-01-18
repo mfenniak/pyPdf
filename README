@@ -9,7 +9,7 @@ Example:
 
     input2 = PdfFileReader(file("document2.pdf", "rb"))
     for i in range(input2.getNumPages()):
-        output.addPage(input2.getPage(i))
+        output.addPage(input2.getPage(i).rotateClockwise(90))
 
     outputStream = file("document-output.pdf", "wb")
     output.write(outputStream)
