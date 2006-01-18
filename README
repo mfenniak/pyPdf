@@ -1,0 +1,17 @@
+Example:
+
+    from pyPdf import PdfFileWriter, PdfFileReader
+
+    output = PdfFileWriter()
+
+    input1 = PdfFileReader(file("document1.pdf", "rb"))
+    output.addPage(input1.getPage(0))
+
+    input2 = PdfFileReader(file("document2.pdf", "rb"))
+    for i in range(input2.getNumPages()):
+        output.addPage(input2.getPage(i))
+
+    outputStream = file("document-output.pdf", "wb")
+    output.write(outputStream)
+
+
