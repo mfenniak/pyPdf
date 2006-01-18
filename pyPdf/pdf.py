@@ -37,6 +37,12 @@ __author__ = "Mathieu Fenniak"
 __author_email__ = "mfenniak@pobox.com"
 
 import re
+import struct
+import zlib
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 
 class PdfFileWriter(object):
@@ -157,10 +163,10 @@ class PdfFileWriter(object):
 
 class PdfFileReader(object):
     def __init__(self, stream):
-        self.read(stream)
-        self.stream = stream
         self.flattenedPages = None
         self.resolvedObjects = {}
+        self.read(stream)
+        self.stream = stream
 
     def getNumPages(self):
         if self.flattenedPages == None:
@@ -206,18 +212,49 @@ class PdfFileReader(object):
         retval = self.resolvedObjects.get(indirectReference.generation, {}).get(indirectReference.idnum, None)
         if retval != None:
             return retval
+        if indirectReference.generation == 0 and \
+           self.xref_objStm.has_key(indirectReference.idnum):
+            # indirect reference to object in object stream
+            # read the entire object stream into memory
+            stmnum,idx = self.xref_objStm[indirectReference.idnum]
+            objStm = self.getObject(IndirectObject(stmnum, 0, self))
+            assert objStm['/Type'] == '/ObjStm'
+            assert idx < objStm['/N']
+            streamData = StringIO(decodeStreamData(objStm))
+            for i in range(objStm['/N']):
+                objnum = NumberObject.readFromStream(streamData)
+                readNonWhitespace(streamData)
+                streamData.seek(-1, 1)
+                offset = NumberObject.readFromStream(streamData)
+                readNonWhitespace(streamData)
+                streamData.seek(-1, 1)
+                t = streamData.tell()
+                streamData.seek(objStm['/First']+offset, 0)
+                obj = readObject(streamData, self)
+                self.resolvedObjects[0][objnum] = obj
+                streamData.seek(t, 0)
+            return self.resolvedObjects[0][indirectReference.idnum]
         start = self.xref[indirectReference.generation][indirectReference.idnum]
         self.stream.seek(start, 0)
-        idnum = readUntilWhitespace(self.stream)
-        generation = readUntilWhitespace(self.stream)
-        obj = self.stream.read(3)
-        readNonWhitespace(self.stream)
-        self.stream.seek(-1, 1)
+        idnum, generation = self.readObjectHeader(self.stream)
+        assert idnum == indirectReference.idnum
+        assert generation == indirectReference.generation
         retval = readObject(self.stream, self)
-        if not self.resolvedObjects.has_key(indirectReference.generation):
-            self.resolvedObjects[indirectReference.generation] = {}
-        self.resolvedObjects[indirectReference.generation][indirectReference.idnum] = retval
+        self.cacheIndirectObject(generation, idnum, retval)
         return retval
+
+    def readObjectHeader(self, stream):
+        idnum = readUntilWhitespace(stream)
+        generation = readUntilWhitespace(stream)
+        obj = stream.read(3)
+        readNonWhitespace(stream)
+        stream.seek(-1, 1)
+        return int(idnum), int(generation)
+
+    def cacheIndirectObject(self, generation, idnum, obj):
+        if not self.resolvedObjects.has_key(generation):
+            self.resolvedObjects[generation] = {}
+        self.resolvedObjects[generation][idnum] = obj
 
     def read(self, stream):
         # start at the end:
@@ -233,45 +270,92 @@ class PdfFileReader(object):
 
         # read all cross reference tables and their trailers
         self.xref = {}
+        self.xref_objStm = {}
         self.trailer = {}
         while 1:
             # load the xref table
             stream.seek(startxref, 0)
-            line = stream.read(5) ; assert line[:4] == "xref"
-            num = readObject(stream, self)
-            readNonWhitespace(stream)
-            stream.seek(-1, 1)
-            size = readObject(stream, self)
-            readNonWhitespace(stream)
-            stream.seek(-1, 1)
-            cnt = 0
-            while cnt < size:
-                line = stream.readline()
-                offset, generation = line[:16].split(" ")
-                offset, generation = int(offset), int(generation)
-                if not self.xref.has_key(generation):
-                    self.xref[generation] = {}
-                self.xref[generation][num] = offset
-                cnt += 1
-                num += 1
-            assert stream.read(7) == "trailer"
-            readNonWhitespace(stream)
-            stream.seek(-1, 1)
-            newTrailer = readObject(stream, self)
-            for key, value in newTrailer.items():
-                if not self.trailer.has_key(key):
-                    self.trailer[key] = value
-            if newTrailer.has_key(NameObject("/Prev")):
-                startxref = newTrailer[NameObject("/Prev")]
+            x = stream.read(1)
+            if x == "x":
+                # standard cross-reference table
+                ref = stream.read(4)
+                assert ref[:3] == "ref"
+                num = readObject(stream, self)
+                readNonWhitespace(stream)
+                stream.seek(-1, 1)
+                size = readObject(stream, self)
+                readNonWhitespace(stream)
+                stream.seek(-1, 1)
+                cnt = 0
+                while cnt < size:
+                    line = stream.readline()
+                    offset, generation = line[:16].split(" ")
+                    offset, generation = int(offset), int(generation)
+                    if not self.xref.has_key(generation):
+                        self.xref[generation] = {}
+                    self.xref[generation][num] = offset
+                    cnt += 1
+                    num += 1
+                assert stream.read(7) == "trailer"
+                readNonWhitespace(stream)
+                stream.seek(-1, 1)
+                newTrailer = readObject(stream, self)
+                for key, value in newTrailer.items():
+                    if not self.trailer.has_key(key):
+                        self.trailer[key] = value
+                if newTrailer.has_key(NameObject("/Prev")):
+                    startxref = newTrailer[NameObject("/Prev")]
+                else:
+                    break
             else:
-                break
-
-        ## read trailer dictionary
-        #while line != "trailer":
-        #    line = self.readNextEndLine(stream)
-        #stream.seek(10, 1) # read past "trailer" line
-        #self.trailer = readObject(stream, self)
-
+                # PDF 1.5+ Cross-Reference Stream
+                stream.seek(-1, 1)
+                idnum, generation = self.readObjectHeader(stream)
+                xrefstream = readObject(stream, self)
+                assert xrefstream["/Type"] == "/XRef"
+                self.cacheIndirectObject(generation, idnum, xrefstream)
+                streamData = StringIO(decodeStreamData(xrefstream))
+                num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
+                entrySizes = xrefstream.get("/W")
+                cnt = 0
+                while cnt < size:
+                    for i in range(len(entrySizes)):
+                        d = streamData.read(entrySizes[i])
+                        di = convertToInt(d, entrySizes[i])
+                        if i == 0:
+                            xref_type = di
+                        elif i == 1:
+                            if xref_type == 0:
+                                next_free_object = di
+                            elif xref_type == 1:
+                                byte_offset = di
+                            elif xref_type == 2:
+                                objstr_num = di
+                        elif i == 2:
+                            if xref_type == 0:
+                                next_generation = di
+                            elif xref_type == 1:
+                                generation = di
+                            elif xref_type == 2:
+                                obstr_idx = di
+                    if xref_type == 0:
+                        pass
+                    elif xref_type == 1:
+                        if not self.xref.has_key(generation):
+                            self.xref[generation] = {}
+                        self.xref[generation][num] = byte_offset
+                    elif xref_type == 2:
+                        self.xref_objStm[num] = [objstr_num, obstr_idx]
+                    cnt += 1
+                    num += 1
+                trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
+                for key in trailerKeys:
+                    if xrefstream.has_key(key) and not self.trailer.has_key(key):
+                        self.trailer[NameObject(key)] = xrefstream[key]
+                if xrefstream.has_key("/Prev"):
+                    startxref = xrefstream["/Prev"]
+                else:
+                    break
 
     def readNextEndLine(self, stream):
         line = ""
@@ -317,7 +401,7 @@ def readObject(stream, pdf):
             # number
             return NumberObject.readFromStream(stream)
         peek = stream.read(20)
-        stream.seek(-20, 1) # reset to start
+        stream.seek(-len(peek), 1) # reset to start
         if re.match(r"(\d+)\s(\d+)\sR", peek) != None:
             return IndirectObject.readFromStream(stream, pdf)
         else:
@@ -335,10 +419,11 @@ class BooleanObject(object):
             stream.write("false")
 
     def readFromStream(stream):
-        word = readUntilWhitespace(stream)
+        word = stream.read(4)
         if word == "true":
             return BooleanObject(True)
-        elif word == "false":
+        elif word == "fals":
+            stream.read(1)
             return BooleanObject(False)
         assert False
     readFromStream = staticmethod(readFromStream)
@@ -397,7 +482,12 @@ class IndirectObject(object):
             if tok.isspace():
                 break
             generation += tok
-        assert stream.read(1) == "R"
+        r = stream.read(1)
+        #if r != "R":
+        #    stream.seek(-20, 1)
+        #    print idnum, generation
+        #    print repr(stream.read(40))
+        assert r == "R"
         return IndirectObject(int(idnum), int(generation), pdf)
     readFromStream = staticmethod(readFromStream)
 
@@ -549,6 +639,9 @@ class DictionaryObject(dict):
             tok = readNonWhitespace(stream)
             stream.seek(-1, 1)
             value = readObject(stream, pdf)
+            if retval.has_key(key):
+                # multiple definitions of key not handled yet
+                assert False
             retval[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
@@ -606,9 +699,65 @@ def readNonWhitespace(stream):
         tok = stream.read(1)
     return tok
 
+def decodeStreamData(stream):
+    if stream.get("/Filter",None) == "/FlateDecode":
+        data = zlib.decompress(stream["__streamdata__"])
+    else:
+        # unsupported Filter
+        assert False
+    predictor = stream.get("/DecodeParms", {}).get("/Predictor", 1)
+    if predictor != 1:
+        columns = stream["/DecodeParms"]["/Columns"]
+        if predictor >= 10:
+            newdata = ""
+            # PNG prediction can vary from row to row
+            rowlength = columns + 1
+            assert len(data) % rowlength == 0
+            prev_rowdata = "\x00"*rowlength
+            for row in range(len(data) / rowlength):
+                rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
+                filterByte = ord(rowdata[0])
+                if filterByte == 0:
+                    pass
+                elif filterByte == 1:
+                    for i in range(2, rowlength):
+                        rowdata[i] = chr((ord(rowdata[i]) + ord(rowdata[i-1])) % 256)
+                elif filterByte == 2:
+                    for i in range(1, rowlength):
+                        rowdata[i] = chr((ord(rowdata[i]) + ord(prev_rowdata[i])) % 256)
+                else:
+                    # unsupported PNG filter
+                    assert False
+                prev_rowdata = rowdata
+                newdata += ''.join(rowdata[1:])
+            data = newdata
+        else:
+            # unsupported predictor
+            assert False
+    return data
+
+def convertToInt(d, size):
+    if size <= 4:
+        d = "\x00\x00\x00\x00" + d
+        d = d[-4:]
+        return struct.unpack(">l", d)[0]
+    elif size <= 8:
+        d = "\x00\x00\x00\x00\x00\x00\x00\x00" + d
+        d = d[-8:]
+        return struct.unpack(">q", d)[0]
+    else:
+        # size too big
+        assert False
+
 
 if __name__ == "__main__":
-    input = PdfFileReader(file("cc-cc.pdf", "rb"))
     output = PdfFileWriter()
-    output.addPage(input.getPage(0).rotateClockwise(90))
-    output.write(file("cc-cc-test.pdf", "wb"))
+
+    #input1 = PdfFileReader(file("cc-cc.pdf", "rb"))
+    #output.addPage(input1.getPage(0))
+
+    input2 = PdfFileReader(file("PDFReference16.pdf", "rb"))
+    for i in range(input2.getNumPages()):
+        output.addPage(input2.getPage(i))
+    
+    output.write(file("test.pdf", "wb"))
