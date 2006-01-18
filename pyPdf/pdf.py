@@ -172,7 +172,13 @@ class PdfFileReader(object):
             self.flatten()
         return self.flattenedPages[pageNumber]
 
-    def flatten(self, pages = None):
+    def flatten(self, pages = None, inherit = None):
+        inheritablePageAttributes = (
+            NameObject("/Resources"), NameObject("/MediaBox"),
+            NameObject("/CropBox"), NameObject("/Rotate")
+            )
+        if inherit == None:
+            inherit = dict()
         if pages == None:
             self.flattenedPages = []
             catalog = self.getObject(self.trailer["/Root"])
@@ -181,10 +187,20 @@ class PdfFileReader(object):
             pages = self.getObject(pages)
         t = pages["/Type"]
         if t == "/Pages":
+            for attr in inheritablePageAttributes:
+                if pages.has_key(attr):
+                    inherit[attr] = t[attr]
             for page in pages["/Kids"]:
-                self.flatten(page)
+                self.flatten(page, inherit)
         elif t == "/Page":
-            self.flattenedPages.append(pages)
+            for attr,value in inherit.items():
+                # if the page has it's own value, it does not inherit the
+                # parent's value:
+                if not pages.has_key(attr):
+                    pages[attr] = value
+            pageObj = PageObject()
+            pageObj.update(pages)
+            self.flattenedPages.append(pageObj)
 
     def getObject(self, indirectReference):
         retval = self.resolvedObjects.get(indirectReference.generation, {}).get(indirectReference.idnum, None)
@@ -559,6 +575,22 @@ class DictionaryObject(dict):
     readFromStream = staticmethod(readFromStream)
 
 
+class PageObject(DictionaryObject):
+    def rotateClockwise(self, angle):
+        assert angle % 90 == 0
+        self.__rotate(angle)
+        return self
+
+    def rotateCounterClockwise(self, angle):
+        assert angle %90 == 0
+        self.__rotate(-angle)
+        return self
+
+    def __rotate(self, angle):
+        currentAngle = self.get("/Rotate", 0)
+        self[NameObject("/Rotate")] = NumberObject(currentAngle + angle)
+
+
 def readUntilWhitespace(stream):
     txt = ""
     while True:
@@ -575,3 +607,8 @@ def readNonWhitespace(stream):
     return tok
 
 
+if __name__ == "__main__":
+    input = PdfFileReader(file("cc-cc.pdf", "rb"))
+    output = PdfFileWriter()
+    output.addPage(input.getPage(0).rotateClockwise(90))
+    output.write(file("cc-cc-test.pdf", "wb"))
