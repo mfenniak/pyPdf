@@ -1,0 +1,9 @@
+Version 1.0, 2006-01-17
+-----------------------
+
+- First distutils-capable true public release.  Supports a wide variety of PDF
+  files that I found sitting around on my system.
+
+- Does not support some PDF 1.5 features, such as object streams,
+  cross-reference streams.
+
