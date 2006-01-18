@@ -51,9 +51,21 @@ class PdfFileWriter(object):
         self.pages = []
 
     def addPage(self, page):
+        """
+        Adds a page to this PDF file.  A dictionary of /Type = /Page.
+        Currently usually aquired from PdfFileReader.getPage().
+
+        Stability: Added in v1.0, will exist for all v1.x releases.
+        """
         self.pages.append(page)
 
     def write(self, stream):
+        """
+        Writes this PDF file to an output stream.  Writes the file as a
+        PDF-1.3 format file.
+
+        Stability: Added in v1.0, will exist for all v1.x releases.
+        """
         objects = []
 
         # The pages will all have a new parent, so we need to replace their
@@ -163,17 +175,35 @@ class PdfFileWriter(object):
 
 class PdfFileReader(object):
     def __init__(self, stream):
+        """
+        Initializes a PdfFileReader object.  This operation can take some time,
+        as the PDF file cross-reference tables are read.  "stream" parameter
+        must be a data stream, not a string or a path name.
+
+        Stability: Added in v1.0, will exist for all v1.x releases.
+        """
         self.flattenedPages = None
         self.resolvedObjects = {}
         self.read(stream)
         self.stream = stream
 
     def getNumPages(self):
+        """
+        Returns the number of pages in this PDF file.
+
+        Stability: Added in v1.0, will exist for all v1.x releases.
+        """
         if self.flattenedPages == None:
             self.flatten()
         return len(self.flattenedPages)
 
     def getPage(self, pageNumber):
+        """
+        Retrieves a page by number from this PDF file.  Returns a PageObject
+        instance.
+
+        Stability: Added in v1.0, will exist for all v1.x releases.
+        """
         if self.flattenedPages == None:
             self.flatten()
         return self.flattenedPages[pageNumber]
@@ -670,12 +700,23 @@ class DictionaryObject(dict):
 
 class PageObject(DictionaryObject):
     def rotateClockwise(self, angle):
+        """
+        Rotates a page clockwise by increments of 90 degrees.
+
+        Stability: Added in v1.1, will exist for all v1.x releases thereafter.
+        """
         assert angle % 90 == 0
         self.__rotate(angle)
         return self
 
     def rotateCounterClockwise(self, angle):
-        assert angle %90 == 0
+        """
+        Rotates a page counter-clockwise by increments of 90 degrees.  Note
+        that this is equivilant to calling rotateClockwise(-angle).
+
+        Stability: Added in v1.1, will exist for all v1.x releases thereafter.
+        """
+        assert angle % 90 == 0
         self.__rotate(-angle)
         return self
 
@@ -761,3 +802,4 @@ if __name__ == "__main__":
         output.addPage(input2.getPage(i))
     
     output.write(file("test.pdf", "wb"))
+
