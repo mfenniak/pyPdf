@@ -1,3 +1,13 @@
+Version 1.2, 2006-01-23
+-----------------------
+
+- Improved support for files with CRLF-based line endings, fixing a common
+  reported problem stating "assertion error: assert line == "%%EOF"".
+
+- Software author/maintainer is now officially a proud married person, which
+  is sure to result in better software... somehow.
+
+
 Version 1.1, 2006-01-18
 -----------------------
 
