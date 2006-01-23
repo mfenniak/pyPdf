@@ -143,6 +143,11 @@ class PdfFileWriter(object):
                 value = self.sweepIndirectReferences(externMap, objects, value)
                 if value == None:
                     print objects, value, origvalue
+                if hasattr(value, "has_key") and value.has_key("__streamdata__"):
+                    # a dictionary value is a stream.  streams must be indirect
+                    # objects, so we need to change this value.
+                    objects.append(value)
+                    value = IndirectObject(len(objects), 0, self)
                 data[key] = value
             return data
         elif isinstance(data, ArrayObject):
@@ -289,7 +294,9 @@ class PdfFileReader(object):
     def read(self, stream):
         # start at the end:
         stream.seek(-2, 2)
-        line = self.readNextEndLine(stream)
+        line = ''
+        while not line:
+            line = self.readNextEndLine(stream)
         assert line[:5] == "%%EOF"
 
         # find startxref entry - the location of the xref table
@@ -396,7 +403,11 @@ class PdfFileReader(object):
         while True:
             x = stream.read(1)
             stream.seek(-2, 1)
-            if x == '\n':
+            if x == '\n' or x == '\r':
+                while x == '\n' or x == '\r':
+                    x = stream.read(1)
+                    stream.seek(-2, 1)
+                stream.seek(1, 1)
                 break
             else:
                 line = x + line
@@ -801,9 +812,9 @@ if __name__ == "__main__":
     #input1 = PdfFileReader(file("input1.pdf", "rb"))
     #output.addPage(input1.getPage(0))
 
-    input2 = PdfFileReader(file("input2.pdf", "rb"))
+    input2 = PdfFileReader(file("plik2.pdf", "rb"))
     for i in range(input2.getNumPages()):
-        output.addPage(input2.getPage(i))
+        output.addPage(input2.getPage(i).testOperation(input2))
     
     output.write(file("test.pdf", "wb"))
 
