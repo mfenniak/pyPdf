@@ -1,3 +1,13 @@
+Version 1.3, 2006-01-23
+-----------------------
+
+- Fix new bug introduced in 1.2 where PDF files with \r line endings did not
+  work properly anymore.  A new test suite developed with various PDF files
+  should prevent regression bugs from now on.
+
+- Fix a bug where inheriting attributes from page nodes did not work.
+
+
 Version 1.2, 2006-01-23
 -----------------------
 
