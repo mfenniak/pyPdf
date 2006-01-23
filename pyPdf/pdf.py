@@ -290,13 +290,13 @@ class PdfFileReader(object):
         # start at the end:
         stream.seek(-2, 2)
         line = self.readNextEndLine(stream)
-        assert line == "%%EOF"
+        assert line[:5] == "%%EOF"
 
         # find startxref entry - the location of the xref table
         line = self.readNextEndLine(stream)
         startxref = int(line)
         line = self.readNextEndLine(stream)
-        assert line == "startxref"
+        assert line[:9] == "startxref"
 
         # read all cross reference tables and their trailers
         self.xref = {}
@@ -310,6 +310,8 @@ class PdfFileReader(object):
                 # standard cross-reference table
                 ref = stream.read(4)
                 assert ref[:3] == "ref"
+                readNonWhitespace(stream)
+                stream.seek(-1, 1)
                 num = readObject(stream, self)
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
@@ -326,6 +328,8 @@ class PdfFileReader(object):
                     self.xref[generation][num] = offset
                     cnt += 1
                     num += 1
+                readNonWhitespace(stream)
+                stream.seek(-1, 1)
                 assert stream.read(7) == "trailer"
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
@@ -392,7 +396,7 @@ class PdfFileReader(object):
         while True:
             x = stream.read(1)
             stream.seek(-2, 1)
-            if x == '\n' or x == '\r':
+            if x == '\n':
                 break
             else:
                 line = x + line
@@ -794,10 +798,10 @@ def convertToInt(d, size):
 if __name__ == "__main__":
     output = PdfFileWriter()
 
-    #input1 = PdfFileReader(file("cc-cc.pdf", "rb"))
+    #input1 = PdfFileReader(file("input1.pdf", "rb"))
     #output.addPage(input1.getPage(0))
 
-    input2 = PdfFileReader(file("PDFReference16.pdf", "rb"))
+    input2 = PdfFileReader(file("input2.pdf", "rb"))
     for i in range(input2.getNumPages()):
         output.addPage(input2.getPage(i))
     
