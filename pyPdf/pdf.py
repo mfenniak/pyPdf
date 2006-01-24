@@ -36,14 +36,16 @@ It may be a solid base for future PDF file work in Python.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "mfenniak@pobox.com"
 
-import re
 import struct
-import zlib
 try:
     from cStringIO import StringIO
 except ImportError:
     from StringIO import StringIO
 
+import filters
+from generic import NameObject, DictionaryObject, IndirectObject, readObject
+from generic import NumberObject, ArrayObject, StringObject
+from utils import readNonWhitespace, readUntilWhitespace
 
 class PdfFileWriter(object):
     def __init__(self):
@@ -209,6 +211,8 @@ class PdfFileReader(object):
 
         Stability: Added in v1.0, will exist for all v1.x releases.
         """
+        # ensure that we're not trying to access an encrypted PDF
+        assert not self.trailer.has_key("/Encrypt")
         if self.flattenedPages == None:
             self.flatten()
         return self.flattenedPages[pageNumber]
@@ -255,7 +259,7 @@ class PdfFileReader(object):
             objStm = self.getObject(IndirectObject(stmnum, 0, self))
             assert objStm['/Type'] == '/ObjStm'
             assert idx < objStm['/N']
-            streamData = StringIO(decodeStreamData(objStm))
+            streamData = StringIO(filters.decodeStreamData(objStm))
             for i in range(objStm['/N']):
                 objnum = NumberObject.readFromStream(streamData)
                 readNonWhitespace(streamData)
@@ -355,7 +359,7 @@ class PdfFileReader(object):
                 xrefstream = readObject(stream, self)
                 assert xrefstream["/Type"] == "/XRef"
                 self.cacheIndirectObject(generation, idnum, xrefstream)
-                streamData = StringIO(decodeStreamData(xrefstream))
+                streamData = StringIO(filters.decodeStreamData(xrefstream))
                 num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
                 entrySizes = xrefstream.get("/W")
                 cnt = 0
@@ -414,305 +418,6 @@ class PdfFileReader(object):
         return line
 
 
-def readObject(stream, pdf):
-    tok = stream.read(1)
-    stream.seek(-1, 1) # reset to start
-    if tok == 't' or tok == 'f':
-        # boolean object
-        return BooleanObject.readFromStream(stream)
-    elif tok == '(':
-        # string object
-        return StringObject.readFromStream(stream)
-    elif tok == '/':
-        # name object
-        return NameObject.readFromStream(stream)
-    elif tok == '[':
-        # array object
-        return ArrayObject.readFromStream(stream, pdf)
-    elif tok == 'n':
-        # null object
-        return NullObject.readFromStream(stream)
-    elif tok == '<':
-        # hexadecimal string OR dictionary
-        peek = stream.read(2)
-        stream.seek(-2, 1) # reset to start
-        if peek == '<<':
-            return DictionaryObject.readFromStream(stream, pdf)
-        else:
-            return StringObject.readHexStringFromStream(stream)
-    else:
-        # number object OR indirect reference
-        if tok == '+' or tok == '-':
-            # number
-            return NumberObject.readFromStream(stream)
-        peek = stream.read(20)
-        stream.seek(-len(peek), 1) # reset to start
-        if re.match(r"(\d+)\s(\d+)\sR", peek) != None:
-            return IndirectObject.readFromStream(stream, pdf)
-        else:
-            return NumberObject.readFromStream(stream)
-
-
-class BooleanObject(object):
-    def __init__(self, value):
-        self.value = value
-
-    def writeToStream(self, stream):
-        if self.value:
-            stream.write("true")
-        else:
-            stream.write("false")
-
-    def readFromStream(stream):
-        word = stream.read(4)
-        if word == "true":
-            return BooleanObject(True)
-        elif word == "fals":
-            stream.read(1)
-            return BooleanObject(False)
-        assert False
-    readFromStream = staticmethod(readFromStream)
-
-
-class ArrayObject(list):
-    def writeToStream(self, stream):
-        stream.write("[")
-        for data in self:
-            stream.write(" ")
-            data.writeToStream(stream)
-        stream.write(" ]")
-
-    def readFromStream(stream, pdf):
-        arr = ArrayObject()
-        assert stream.read(1) == "["
-        while True:
-            # skip leading whitespace
-            tok = stream.read(1)
-            while tok.isspace():
-                tok = stream.read(1)
-            stream.seek(-1, 1)
-            # check for array ending
-            peekahead = stream.read(1)
-            if peekahead == "]":
-                break
-            stream.seek(-1, 1)
-            # read and append obj
-            arr.append(readObject(stream, pdf))
-        return arr
-    readFromStream = staticmethod(readFromStream)
-
-
-class IndirectObject(object):
-    def __init__(self, idnum, generation, pdf):
-        self.idnum = idnum
-        self.generation = generation
-        self.pdf = pdf
-
-    def __repr__(self):
-        return "IndirectObject(%r, %r)" % (self.idnum, self.generation)
-
-    def writeToStream(self, stream):
-        stream.write("%s %s R" % (self.idnum, self.generation))
-
-    def readFromStream(stream, pdf):
-        idnum = ""
-        while True:
-            tok = stream.read(1)
-            if tok.isspace():
-                break
-            idnum += tok
-        generation = ""
-        while True:
-            tok = stream.read(1)
-            if tok.isspace():
-                break
-            generation += tok
-        r = stream.read(1)
-        #if r != "R":
-        #    stream.seek(-20, 1)
-        #    print idnum, generation
-        #    print repr(stream.read(40))
-        assert r == "R"
-        return IndirectObject(int(idnum), int(generation), pdf)
-    readFromStream = staticmethod(readFromStream)
-
-
-class FloatObject(float):
-    def writeToStream(self, stream):
-        stream.write(repr(self))
-
-
-class NumberObject(int):
-    def __init__(self, value):
-        int.__init__(self, value)
-
-    def writeToStream(self, stream):
-        stream.write(repr(self))
-
-    def readFromStream(stream):
-        name = ""
-        while True:
-            tok = stream.read(1)
-            if tok != '+' and tok != '-' and tok != '.' and not tok.isdigit():
-                stream.seek(-1, 1)
-                break
-            name += tok
-        if name.find(".") != -1:
-            return FloatObject(name)
-        else:
-            return NumberObject(name)
-    readFromStream = staticmethod(readFromStream)
-
-
-class StringObject(str):
-    def writeToStream(self, stream):
-        stream.write("(")
-        for c in self:
-            if not c.isalnum() and not c.isspace():
-                stream.write("\\%03o" % ord(c))
-            else:
-                stream.write(c)
-        stream.write(")")
-
-    def readHexStringFromStream(stream):
-        stream.read(1)
-        txt = ""
-        x = ""
-        while True:
-            tok = readNonWhitespace(stream)
-            if tok == ">":
-                break
-            x += tok
-            if len(x) == 2:
-                txt += chr(int(x, base=16))
-                x = ""
-        if len(x) == 1:
-            x += "0"
-        if len(x) == 2:
-            txt += chr(int(x, base=16))
-        return StringObject(txt)
-    readHexStringFromStream = staticmethod(readHexStringFromStream)
-
-    def readFromStream(stream):
-        tok = stream.read(1)
-        parens = 1
-        txt = ""
-        while True:
-            tok = stream.read(1)
-            if tok == "(":
-                parens += 1
-            elif tok == ")":
-                parens -= 1
-                if parens == 0:
-                    break
-            elif tok == "\\":
-                tok = stream.read(1)
-                if tok == "n":
-                    tok = "\n"
-                elif tok == "r":
-                    tok = "\r"
-                elif tok == "t":
-                    tok = "\t"
-                elif tok == "b":
-                    tok == "\b"
-                elif tok == "f":
-                    tok = "\f"
-                elif tok == "(":
-                    tok = "("
-                elif tok == ")":
-                    tok = ")"
-                elif tok == "\\":
-                    tok = "\\"
-                elif tok.isdigit():
-                    tok += stream.read(2)
-                    tok = chr(int(tok, base=8))
-            txt += tok
-        return StringObject(txt)
-    readFromStream = staticmethod(readFromStream)
-
-
-class NameObject(str):
-    delimiterCharacters = "(", ")", "<", ">", "[", "]", "{", "}", "/", "%"
-
-    def __init__(self, data):
-        str.__init__(self, data)
-
-    def writeToStream(self, stream):
-        stream.write(self)
-
-    def readFromStream(stream):
-        name = stream.read(1)
-        assert name == "/"
-        while True:
-            tok = stream.read(1)
-            if tok.isspace() or tok in NameObject.delimiterCharacters:
-                stream.seek(-1, 1)
-                break
-            name += tok
-        return NameObject(name)
-    readFromStream = staticmethod(readFromStream)
-
-
-class DictionaryObject(dict):
-    def __init__(self):
-        pass
-
-    def writeToStream(self, stream):
-        stream.write("<<\n")
-        for key, value in self.items():
-            if key != "__streamdata__":
-                key.writeToStream(stream)
-                stream.write(" ")
-                value.writeToStream(stream)
-                stream.write("\n")
-        stream.write(">>")
-        if self.has_key("__streamdata__"):
-            stream.write("\nstream\n")
-            stream.write(self["__streamdata__"])
-            stream.write("\nendstream")
-
-    def readFromStream(stream, pdf):
-        assert stream.read(2) == "<<"
-        retval = DictionaryObject()
-        while True:
-            tok = readNonWhitespace(stream)
-            if tok == ">":
-                stream.read(1)
-                break
-            stream.seek(-1, 1)
-            key = readObject(stream, pdf)
-            tok = readNonWhitespace(stream)
-            stream.seek(-1, 1)
-            value = readObject(stream, pdf)
-            if retval.has_key(key):
-                # multiple definitions of key not handled yet
-                assert False
-            retval[key] = value
-        pos = stream.tell()
-        s = readNonWhitespace(stream)
-        if s == 's' and stream.read(5) == 'tream':
-            eol = stream.read(1)
-            assert eol in ("\n", "\r")
-            if eol == "\r":
-                # read \n after
-                stream.read(1)
-            # this is a stream object, not a dictionary
-            assert retval.has_key("/Length")
-            length = retval["/Length"]
-            if isinstance(length, IndirectObject):
-                t = stream.tell()
-                length = pdf.getObject(length)
-                stream.seek(t, 0)
-            retval["__streamdata__"] = stream.read(length)
-            e = readNonWhitespace(stream)
-            ndstream = stream.read(8)
-            assert e == "e" and ndstream == "ndstream"
-        else:
-            stream.seek(pos, 0)
-        return retval
-    readFromStream = staticmethod(readFromStream)
-
-
 class PageObject(DictionaryObject):
     def rotateClockwise(self, angle):
         """
@@ -740,57 +445,6 @@ class PageObject(DictionaryObject):
         self[NameObject("/Rotate")] = NumberObject(currentAngle + angle)
 
 
-def readUntilWhitespace(stream):
-    txt = ""
-    while True:
-        tok = stream.read(1)
-        if tok.isspace():
-            break
-        txt += tok
-    return txt
-
-def readNonWhitespace(stream):
-    tok = ' '
-    while tok == '\n' or tok == '\r' or tok == ' ' or tok == '\t':
-        tok = stream.read(1)
-    return tok
-
-def decodeStreamData(stream):
-    if stream.get("/Filter",None) == "/FlateDecode":
-        data = zlib.decompress(stream["__streamdata__"])
-    else:
-        # unsupported Filter
-        assert False
-    predictor = stream.get("/DecodeParms", {}).get("/Predictor", 1)
-    if predictor != 1:
-        columns = stream["/DecodeParms"]["/Columns"]
-        if predictor >= 10:
-            newdata = ""
-            # PNG prediction can vary from row to row
-            rowlength = columns + 1
-            assert len(data) % rowlength == 0
-            prev_rowdata = "\x00"*rowlength
-            for row in range(len(data) / rowlength):
-                rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
-                filterByte = ord(rowdata[0])
-                if filterByte == 0:
-                    pass
-                elif filterByte == 1:
-                    for i in range(2, rowlength):
-                        rowdata[i] = chr((ord(rowdata[i]) + ord(rowdata[i-1])) % 256)
-                elif filterByte == 2:
-                    for i in range(1, rowlength):
-                        rowdata[i] = chr((ord(rowdata[i]) + ord(prev_rowdata[i])) % 256)
-                else:
-                    # unsupported PNG filter
-                    assert False
-                prev_rowdata = rowdata
-                newdata += ''.join(rowdata[1:])
-            data = newdata
-        else:
-            # unsupported predictor
-            assert False
-    return data
 
 def convertToInt(d, size):
     if size <= 4:
