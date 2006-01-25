@@ -48,8 +48,40 @@ from utils import readNonWhitespace, readUntilWhitespace
 
 class PdfFileWriter(object):
     def __init__(self):
-        self.header = "%PDF-1.3"
-        self.pages = []
+        self._header = "%PDF-1.3"
+        self._objects = []  # array of indirect objects
+
+        # The root of our page tree node.
+        pages = DictionaryObject()
+        pages.update({
+                NameObject("/Type"): NameObject("/Pages"),
+                NameObject("/Count"): NumberObject(0),
+                NameObject("/Kids"): ArrayObject(),
+                })
+        self._pages = self._addObject(pages)
+
+        # info object
+        info = DictionaryObject()
+        info.update({
+                NameObject("/Producer"): StringObject("Python PDF Library - http://stompstompstomp.com/pyPdf/")
+                })
+        self._info = self._addObject(info)
+
+        # root object
+        root = DictionaryObject()
+        root.update({
+            NameObject("/Type"): NameObject("/Catalog"),
+            NameObject("/Pages"): self._pages,
+            })
+        self._root = self._addObject(root)
+
+    def _addObject(self, obj):
+        self._objects.append(obj)
+        return IndirectObject(len(self._objects), 0, self)
+
+    def _getObject(self, ido):
+        assert ido.pdf == self
+        return self._objects[ido.idnum - 1]
 
     def addPage(self, page):
         """
@@ -58,7 +90,12 @@ class PdfFileWriter(object):
 
         Stability: Added in v1.0, will exist for all v1.x releases.
         """
-        self.pages.append(page)
+        assert page["/Type"] == "/Page"
+        page[NameObject("/Parent")] = self._pages
+        page = self._addObject(page)
+        pages = self._getObject(self._pages)
+        pages["/Kids"].append(page)
+        pages["/Count"] = NumberObject(pages["/Count"] + 1)
 
     def write(self, stream):
         """
@@ -67,51 +104,18 @@ class PdfFileWriter(object):
 
         Stability: Added in v1.0, will exist for all v1.x releases.
         """
-        objects = []
 
-        # The pages will all have a new parent, so we need to replace their
-        # existing parent object.
-        pages = DictionaryObject()
-        pages.update({
-                NameObject("/Type"): NameObject("/Pages"),
-                NameObject("/Count"): NumberObject(len(self.pages)),
-                NameObject("/Kids"): ArrayObject(),
-                })
-        objects.append(pages)
-        pages_ido = IndirectObject(len(objects), 0, self)
-        for page in self.pages:
-            page[NameObject("/Parent")] = pages_ido
-
-        # info object
-        info = DictionaryObject()
-        info.update({
-                NameObject("/Producer"): StringObject("Python PDF Library - mfenniak@pobox.com")
-                })
-        objects.append(info)
-        info = IndirectObject(len(objects), 0, self)
-
-        # root object
-        root = DictionaryObject()
-        root.update({
-            NameObject("/Type"): NameObject("/Catalog"),
-            NameObject("/Pages"): pages_ido,
-            })
-        objects.append(root)
-        root = IndirectObject(len(objects), 0, self)
-
-        # The real work.  Find any indirect references in out pages,
-        # and make them into objects for us to write.
         externalReferenceMap = {}
-        for page in self.pages:
-            page = self.sweepIndirectReferences(externalReferenceMap, objects, page)
-            objects.append(page)
-            pages["/Kids"].append(IndirectObject(len(objects), 0, self))
+        self.stack = []
+        self._sweepIndirectReferences(externalReferenceMap, self._root)
+        del self.stack
 
         # Begin writing:
-        stream.write(self.header + "\n")
-        for i in range(len(objects)):
-            obj = objects[i]
-            objects[i] = stream.tell()
+        object_positions = []
+        stream.write(self._header + "\n")
+        for i in range(len(self._objects)):
+            obj = self._objects[i]
+            object_positions.append(stream.tell())
             stream.write(str(i + 1) + " 0 obj\n")
             obj.writeToStream(stream)
             stream.write("\nendobj\n")
@@ -119,62 +123,68 @@ class PdfFileWriter(object):
         # xref table
         xref_location = stream.tell()
         stream.write("xref\n")
-        stream.write("0 %s\n" % (len(objects) + 1))
+        stream.write("0 %s\n" % (len(self._objects) + 1))
         stream.write("%010d %05d f \n" % (0, 65535))
-        for offset in objects:
+        for offset in object_positions:
             stream.write("%010d %05d n \n" % (offset, 0))
 
         # trailer
         stream.write("trailer\n")
         trailer = DictionaryObject()
         trailer.update({
-                NameObject("/Size"): NumberObject(len(objects) + 1),
-                NameObject("/Root"): root,
-                NameObject("/Info"): info,
+                NameObject("/Size"): NumberObject(len(self._objects) + 1),
+                NameObject("/Root"): self._root,
+                NameObject("/Info"): self._info,
                 })
         trailer.writeToStream(stream)
         
         # eof
         stream.write("\nstartxref\n%s\n%%%%EOF\n" % (xref_location))
 
-    def sweepIndirectReferences(self, externMap, objects, data):
+    def _sweepIndirectReferences(self, externMap, data):
         if isinstance(data, DictionaryObject):
             for key, value in data.items():
                 origvalue = value
-                value = self.sweepIndirectReferences(externMap, objects, value)
+                value = self._sweepIndirectReferences(externMap, value)
                 if value == None:
                     print objects, value, origvalue
                 if hasattr(value, "has_key") and value.has_key("__streamdata__"):
                     # a dictionary value is a stream.  streams must be indirect
                     # objects, so we need to change this value.
-                    objects.append(value)
-                    value = IndirectObject(len(objects), 0, self)
+                    value = self._addObject(value)
                 data[key] = value
             return data
         elif isinstance(data, ArrayObject):
             for i in range(len(data)):
-                data[i] = self.sweepIndirectReferences(externMap, objects, data[i])
+                data[i] = self._sweepIndirectReferences(externMap, data[i])
             return data
         elif isinstance(data, IndirectObject):
             # internal indirect references are fine
-            if data.pdf != self:
+            if data.pdf == self:
+                if data.idnum in self.stack:
+                    return data
+                else:
+                    self.stack.append(data.idnum)
+                    realdata = self._getObject(data)
+                    self._sweepIndirectReferences(externMap, realdata)
+                    self.stack.pop()
+                    return data
+            else:
                 newobj = externMap.get(data.pdf, {}).get(data.generation, {}).get(data.idnum, None)
                 if newobj == None:
                     newobj = data.pdf.getObject(data)
-                    objects.append(None) # placeholder
-                    idnum = len(objects)
+                    self._objects.append(None) # placeholder
+                    idnum = len(self._objects)
                     newobj_ido = IndirectObject(idnum, 0, self)
                     if not externMap.has_key(data.pdf):
                         externMap[data.pdf] = {}
                     if not externMap[data.pdf].has_key(data.generation):
                         externMap[data.pdf][data.generation] = {}
                     externMap[data.pdf][data.generation][data.idnum] = newobj_ido
-                    newobj = self.sweepIndirectReferences(externMap, objects, newobj)
-                    objects[idnum-1] = newobj
+                    newobj = self._sweepIndirectReferences(externMap, newobj)
+                    self._objects[idnum-1] = newobj
                     return newobj_ido
                 return newobj
-            else:
-                return data
         else:
             return data
 
@@ -200,7 +210,7 @@ class PdfFileReader(object):
         Stability: Added in v1.0, will exist for all v1.x releases.
         """
         if self.flattenedPages == None:
-            self.flatten()
+            self._flatten()
         return len(self.flattenedPages)
 
     def getPage(self, pageNumber):
@@ -213,10 +223,10 @@ class PdfFileReader(object):
         # ensure that we're not trying to access an encrypted PDF
         assert not self.trailer.has_key("/Encrypt")
         if self.flattenedPages == None:
-            self.flatten()
+            self._flatten()
         return self.flattenedPages[pageNumber]
 
-    def flatten(self, pages = None, inherit = None):
+    def _flatten(self, pages = None, inherit = None):
         inheritablePageAttributes = (
             NameObject("/Resources"), NameObject("/MediaBox"),
             NameObject("/CropBox"), NameObject("/Rotate")
@@ -235,7 +245,7 @@ class PdfFileReader(object):
                 if pages.has_key(attr):
                     inherit[attr] = pages[attr]
             for page in pages["/Kids"]:
-                self.flatten(page, inherit)
+                self._flatten(page, inherit)
         elif t == "/Page":
             for attr,value in inherit.items():
                 # if the page has it's own value, it does not inherit the
