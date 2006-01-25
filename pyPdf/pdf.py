@@ -43,8 +43,7 @@ except ImportError:
     from StringIO import StringIO
 
 import filters
-from generic import NameObject, DictionaryObject, IndirectObject, readObject
-from generic import NumberObject, ArrayObject, StringObject
+from generic import *
 from utils import readNonWhitespace, readUntilWhitespace
 
 class PdfFileWriter(object):
@@ -243,7 +242,7 @@ class PdfFileReader(object):
                 # parent's value:
                 if not pages.has_key(attr):
                     pages[attr] = value
-            pageObj = PageObject()
+            pageObj = PageObject(self)
             pageObj.update(pages)
             self.flattenedPages.append(pageObj)
 
@@ -418,7 +417,43 @@ class PdfFileReader(object):
         return line
 
 
+def getRectangle(self, name, defaults):
+    retval = self.get(name)
+    if isinstance(retval, RectangleObject):
+        return retval
+    if retval == None:
+        for d in defaults:
+            retval = self.get(d)
+            if retval != None:
+                break
+    if isinstance(retval, IndirectObject):
+        retval = self.pdf.getObject(retval)
+    retval = RectangleObject(retval)
+    setRectangle(self, name, retval)
+    return retval
+
+def setRectangle(self, name, value):
+    if not isinstance(name, NameObject):
+        name = NameObject(name)
+    self[name] = value
+
+def deleteRectangle(self, name):
+    del self[name]
+
+def addRectangleAccessor(klass, propname, name, fallback, docs):
+    setattr(klass, propname,
+        property(
+            lambda self: getRectangle(self, name, fallback),
+            lambda self, value: setRectangle(self, name, value),
+            lambda self: deleteRectangle(self, name),
+            docs
+            )
+        )
+
 class PageObject(DictionaryObject):
+    def __init__(self, pdf):
+        self.pdf = pdf
+
     def rotateClockwise(self, angle):
         """
         Rotates a page clockwise by increments of 90 degrees.
@@ -444,6 +479,64 @@ class PageObject(DictionaryObject):
         currentAngle = self.get("/Rotate", 0)
         self[NameObject("/Rotate")] = NumberObject(currentAngle + angle)
 
+addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
+        """A rectangle, expressed in default user space units, defining the
+        boundaries of the physical medium on which the page is intended to be
+        displayed or printed.
+
+        Stability: Added in v1.4, will exist for all v1.x releases
+        thereafter.""")
+addRectangleAccessor(PageObject, "cropBox", "/CropBox", ("/MediaBox",),
+        """A rectangle, expressed in default user space units, defining the
+        visible region of default user space.  When the page is displayed or
+        printed, its contents are to be clipped (cropped) to this rectangle and
+        then imposed on the output medium in some implementation-defined
+        manner.  Default value: same as MediaBox.
+
+        Stability: Added in v1.4, will exist for all v1.x releases
+        thereafter.""")
+addRectangleAccessor(PageObject, "bleedBox", "/BleedBox", ("/CropBox",
+        "/MediaBox"), """A rectangle, expressed in default user space units,
+        defining the region to which the contents of the page should be clipped
+        when output in a production environment.
+        
+        Stability: Added in v1.4, will exist for all v1.x releases
+        thereafter.""")
+addRectangleAccessor(PageObject, "trimBox", "/TrimBox", ("/CropBox",
+        "/MediaBox"), """A rectangle, expressed in default user space units,
+        defining the intended dimensions of the finished page after trimming.
+        
+        Stability: Added in v1.4, will exist for all v1.x releases
+        thereafter.""")
+addRectangleAccessor(PageObject, "artBox", "/ArtBox", ("/CropBox",
+        "/MediaBox"), """A rectangle, expressed in default user space units,
+        defining the extent of the page's meaningful content as intended by the
+        page's creator.
+        
+        Stability: Added in v1.4, will exist for all v1.x releases
+        thereafter.""")
+
+
+class ContentStream(DictionaryObject):
+    def __init__(self, stream):
+        self.operations = []
+        self.__parseContentStream(stream)
+
+    def __parseContentStream(self, stream):
+        stream = StringIO(filters.decodeStreamData(stream))
+        operands = []
+        while True:
+            peek = readNonWhitespace(stream)
+            if peek == '':
+                break
+            stream.seek(-1, 1)
+            if peek.isalpha():
+                operator = readUntilWhitespace(stream)
+                self.operations.append((operands, operator))
+                operands = []
+                print self.operations[-1]
+            else:
+                operands.append(readObject(stream, None))
 
 
 def convertToInt(d, size):
@@ -466,9 +559,22 @@ if __name__ == "__main__":
     #input1 = PdfFileReader(file("input1.pdf", "rb"))
     #output.addPage(input1.getPage(0))
 
-    input2 = PdfFileReader(file("plik2.pdf", "rb"))
-    for i in range(input2.getNumPages()):
-        output.addPage(input2.getPage(i).testOperation(input2))
-    
+    input2 = PdfFileReader(file("..\\test\\5000-s1-05e.pdf", "rb"))
+    page = input2.getPage(1)
+    page.cropBox.upperRight = (200, 200)
+    print repr(page.cropBox)
+    page.cropBox = RectangleObject((20, 20, 40, 40))
+    print repr(page.cropBox)
+    del page.cropBox
+    print repr(page.cropBox)
+    #contents = input2.getObject(page["/Contents"])
+    #contentStream = ContentStream(contents)
+    #for operands,operator in contentStream.operations:
+    #    for operand in operands:
+    #        if isinstance(operand, NameObject):
+    #            print "name object"
+
+    output.addPage(page)
     output.write(file("test.pdf", "wb"))
+
 

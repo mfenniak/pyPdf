@@ -37,6 +37,45 @@ __author_email__ = "mfenniak@pobox.com"
 import re
 from utils import readNonWhitespace
 
+def readObject(stream, pdf):
+    tok = stream.read(1)
+    stream.seek(-1, 1) # reset to start
+    if tok == 't' or tok == 'f':
+        # boolean object
+        return BooleanObject.readFromStream(stream)
+    elif tok == '(':
+        # string object
+        return StringObject.readFromStream(stream)
+    elif tok == '/':
+        # name object
+        return NameObject.readFromStream(stream)
+    elif tok == '[':
+        # array object
+        return ArrayObject.readFromStream(stream, pdf)
+    elif tok == 'n':
+        # null object
+        return NullObject.readFromStream(stream)
+    elif tok == '<':
+        # hexadecimal string OR dictionary
+        peek = stream.read(2)
+        stream.seek(-2, 1) # reset to start
+        if peek == '<<':
+            return DictionaryObject.readFromStream(stream, pdf)
+        else:
+            return StringObject.readHexStringFromStream(stream)
+    else:
+        # number object OR indirect reference
+        if tok == '+' or tok == '-':
+            # number
+            return NumberObject.readFromStream(stream)
+        peek = stream.read(20)
+        stream.seek(-len(peek), 1) # reset to start
+        if re.match(r"(\d+)\s(\d+)\sR", peek) != None:
+            return IndirectObject.readFromStream(stream, pdf)
+        else:
+            return NumberObject.readFromStream(stream)
+
+
 class BooleanObject(object):
     def __init__(self, value):
         self.value = value
@@ -296,40 +335,72 @@ class DictionaryObject(dict):
         return retval
     readFromStream = staticmethod(readFromStream)
 
-def readObject(stream, pdf):
-    tok = stream.read(1)
-    stream.seek(-1, 1) # reset to start
-    if tok == 't' or tok == 'f':
-        # boolean object
-        return BooleanObject.readFromStream(stream)
-    elif tok == '(':
-        # string object
-        return StringObject.readFromStream(stream)
-    elif tok == '/':
-        # name object
-        return NameObject.readFromStream(stream)
-    elif tok == '[':
-        # array object
-        return ArrayObject.readFromStream(stream, pdf)
-    elif tok == 'n':
-        # null object
-        return NullObject.readFromStream(stream)
-    elif tok == '<':
-        # hexadecimal string OR dictionary
-        peek = stream.read(2)
-        stream.seek(-2, 1) # reset to start
-        if peek == '<<':
-            return DictionaryObject.readFromStream(stream, pdf)
-        else:
-            return StringObject.readHexStringFromStream(stream)
-    else:
-        # number object OR indirect reference
-        if tok == '+' or tok == '-':
-            # number
-            return NumberObject.readFromStream(stream)
-        peek = stream.read(20)
-        stream.seek(-len(peek), 1) # reset to start
-        if re.match(r"(\d+)\s(\d+)\sR", peek) != None:
-            return IndirectObject.readFromStream(stream, pdf)
-        else:
-            return NumberObject.readFromStream(stream)
+
+class RectangleObject(ArrayObject):
+    def __init__(self, arr):
+        # must have four points
+        assert len(arr) == 4
+        # automatically convert arr[x] into NumberObject(arr[x]) if necessary
+        ArrayObject.__init__(self, [self.ensureIsNumber(x) for x in arr])
+
+    def ensureIsNumber(self, value):
+        if not isinstance(value, NumberObject):
+            value = NumberObject(value)
+        return value
+
+    def __repr__(self):
+        return "RectangleObject(%s)" % repr(list(self))
+
+    def getLowerLeft_x(self):
+        return self[0]
+
+    def getLowerLeft_y(self):
+        return self[1]
+
+    def getUpperRight_x(self):
+        return self[2]
+
+    def getUpperRight_y(self):
+        return self[3]
+
+    def getUpperLeft_x(self):
+        return self.getLowerLeft_x()
+    
+    def getUpperLeft_y(self):
+        return self.getUpperRight_y()
+
+    def getLowerRight_x(self):
+        return self.getUpperRight_x()
+
+    def getLowerRight_y(self):
+        return self.getLowerLeft_y()
+
+    def getLowerLeft(self):
+        return self.getLowerLeft_x(), self.getLowerLeft_y()
+
+    def getLowerRight(self):
+        return self.getLowerRight_x(), self.getLowerRight_y()
+
+    def getUpperLeft(self):
+        return self.getUpperLeft_x(), self.getUpperLeft_y()
+
+    def getUpperRight(self):
+        return self.getUpperRight_x(), self.getUpperRight_y()
+
+    def setLowerLeft(self, value):
+        self[0], self[1] = [self.ensureIsNumber(x) for x in value]
+
+    def setLowerRight(self, value):
+        self[2], self[1] = [self.ensureIsNumber(x) for x in value]
+
+    def setUpperLeft(self, value):
+        self[0], self[3] = [self.ensureIsNumber(x) for x in value]
+
+    def setUpperRight(self, value):
+        self[2], self[3] = [self.ensureIsNumber(x) for x in value]
+
+    lowerLeft = property(getLowerLeft, setLowerLeft, None, None)
+    lowerRight = property(getLowerRight, setLowerRight, None, None)
+    upperLeft = property(getUpperLeft, setUpperLeft, None, None)
+    upperRight = property(getUpperRight, setUpperRight, None, None)
+
