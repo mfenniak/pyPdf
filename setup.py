@@ -22,8 +22,8 @@ setup(
         long_description=long_description,
         author="Mathieu Fenniak",
         author_email="mfenniak@pobox.com",
-        url="http://stompstompstomp.com/pyPdf/",
-        download_url="http://stompstompstomp.com/pyPdf/pyPdf-1.3.tar.gz",
+        url="http://pybrary.net/pyPdf/",
+        download_url="http://pybrary.net/pyPdf/pyPdf-1.3.tar.gz",
         classifiers = [
             "Development Status :: 4 - Beta",
             "Intended Audience :: Developers",
