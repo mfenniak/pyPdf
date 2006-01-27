@@ -75,8 +75,13 @@ def readObject(stream, pdf):
         else:
             return NumberObject.readFromStream(stream)
 
+class PdfObject(object):
+    def getObject(self):
+        """Resolves indirect references."""
+        return self
 
-class BooleanObject(object):
+
+class BooleanObject(PdfObject):
     def __init__(self, value):
         self.value = value
 
@@ -97,7 +102,7 @@ class BooleanObject(object):
     readFromStream = staticmethod(readFromStream)
 
 
-class ArrayObject(list):
+class ArrayObject(list, PdfObject):
     def writeToStream(self, stream):
         stream.write("[")
         for data in self:
@@ -125,14 +130,29 @@ class ArrayObject(list):
     readFromStream = staticmethod(readFromStream)
 
 
-class IndirectObject(object):
+class IndirectObject(PdfObject):
     def __init__(self, idnum, generation, pdf):
         self.idnum = idnum
         self.generation = generation
         self.pdf = pdf
 
+    def getObject(self):
+        return self.pdf.getObject(self).getObject()
+
     def __repr__(self):
         return "IndirectObject(%r, %r)" % (self.idnum, self.generation)
+
+    def __eq__(self, other):
+        return (
+            other != None and
+            isinstance(other, IndirectObject) and
+            self.idnum == other.idnum and
+            self.generation == other.generation and
+            self.pdf is other.pdf
+            )
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
     def writeToStream(self, stream):
         stream.write("%s %s R" % (self.idnum, self.generation))
@@ -160,12 +180,12 @@ class IndirectObject(object):
     readFromStream = staticmethod(readFromStream)
 
 
-class FloatObject(float):
+class FloatObject(float, PdfObject):
     def writeToStream(self, stream):
         stream.write(repr(self))
 
 
-class NumberObject(int):
+class NumberObject(int, PdfObject):
     def __init__(self, value):
         int.__init__(self, value)
 
@@ -187,7 +207,7 @@ class NumberObject(int):
     readFromStream = staticmethod(readFromStream)
 
 
-class StringObject(str):
+class StringObject(str, PdfObject):
     def writeToStream(self, stream):
         stream.write("(")
         for c in self:
@@ -254,7 +274,7 @@ class StringObject(str):
     readFromStream = staticmethod(readFromStream)
 
 
-class NameObject(str):
+class NameObject(str, PdfObject):
     delimiterCharacters = "(", ")", "<", ">", "[", "]", "{", "}", "/", "%"
 
     def __init__(self, data):
@@ -276,7 +296,7 @@ class NameObject(str):
     readFromStream = staticmethod(readFromStream)
 
 
-class DictionaryObject(dict):
+class DictionaryObject(dict, PdfObject):
     def __init__(self):
         pass
 
