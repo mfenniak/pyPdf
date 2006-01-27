@@ -70,7 +70,7 @@ def readObject(stream, pdf):
             return NumberObject.readFromStream(stream)
         peek = stream.read(20)
         stream.seek(-len(peek), 1) # reset to start
-        if re.match(r"(\d+)\s(\d+)\sR", peek) != None:
+        if re.match(r"(\d+)\s(\d+)\sR[^a-zA-Z]", peek) != None:
             return IndirectObject.readFromStream(stream, pdf)
         else:
             return NumberObject.readFromStream(stream)
