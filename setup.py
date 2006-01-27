@@ -3,11 +3,12 @@
 from distutils.core import setup
 
 long_description = """
-A Pure-Python library built as a PDF toolkit.  At present, there is only one
-actual tool in the toolkit - the ability to grab pages from PDFs and output
-them into a new PDF.  Like a hammer, this tool is useful for two operations:
-splitting and merging.  You can extract individual pages from a PDF file,
-or selectively merge pages from multiple PDF files.
+A Pure-Python library built as a PDF toolkit.  It is capable of:
+    
+- splitting documents page by page,
+- merging documents page by page,
+- cropping pages,
+- merging multiple pages into a single page.
 
 By being Pure-Python, it should run on any Python platform without any
 dependencies on external libraries.  It can also work entirely on StringIO
