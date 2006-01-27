@@ -38,7 +38,7 @@ def readUntilWhitespace(stream):
     txt = ""
     while True:
         tok = stream.read(1)
-        if tok.isspace():
+        if tok.isspace() or not tok:
             break
         txt += tok
     return txt
