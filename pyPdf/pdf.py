@@ -64,7 +64,7 @@ class PdfFileWriter(object):
         # info object
         info = DictionaryObject()
         info.update({
-                NameObject("/Producer"): StringObject("Python PDF Library - http://stompstompstomp.com/pyPdf/")
+                NameObject("/Producer"): StringObject("Python PDF Library - http://pybrary.net/pyPdf/")
                 })
         self._info = self._addObject(info)
 
@@ -477,7 +477,7 @@ class PageObject(DictionaryObject):
         Stability: Added in v1.1, will exist for all v1.x releases thereafter.
         """
         assert angle % 90 == 0
-        self.__rotate(angle)
+        self._rotate(angle)
         return self
 
     def rotateCounterClockwise(self, angle):
@@ -488,34 +488,80 @@ class PageObject(DictionaryObject):
         Stability: Added in v1.1, will exist for all v1.x releases thereafter.
         """
         assert angle % 90 == 0
-        self.__rotate(-angle)
+        self._rotate(-angle)
         return self
 
-    def __rotate(self, angle):
+    def _rotate(self, angle):
         currentAngle = self.get("/Rotate", 0)
         self[NameObject("/Rotate")] = NumberObject(currentAngle + angle)
 
-    def __mergeResources(res1, res2, resource):
+    def _mergeResources(res1, res2, resource):
         newRes = DictionaryObject()
         newRes.update(res1.get(resource, DictionaryObject()).getObject())
         page2Res = res2.get(resource, DictionaryObject()).getObject()
         renameRes = {}
         for key in page2Res.keys():
             if newRes.has_key(key) and newRes[key] != page2Res[key]:
-                newname = NameObject(key + "_renamed")
+                newname = NameObject(key + "renamed")
                 renameRes[key] = newname
                 newRes[newname] = page2Res[key]
             elif not newRes.has_key(key):
                 newRes[key] = page2Res[key]
         return newRes, renameRes
-    __mergeResources = staticmethod(__mergeResources)
+    _mergeResources = staticmethod(_mergeResources)
+
+    def _contentStreamRename(stream, rename):
+        if not rename:
+            return stream
+        stream = ContentStream(stream)
+        newdata = StringIO()
+        for operands,operator in stream.operations:
+            for op in operands:
+                if isinstance(op, NameObject):
+                    op = rename.get(op, op)
+                op.writeToStream(newdata)
+                newdata.write(" ")
+            newdata.write(operator)
+            newdata.write("\n")
+        retval = DictionaryObject()
+        retval["__streamdata__"] = newdata.getvalue()
+        retval[NameObject('/Length')] = NumberObject(len(retval["__streamdata__"]))
+        return retval
+    _contentStreamRename = staticmethod(_contentStreamRename)
 
     def mergePage(self, page2):
         """
-        Merges the content streams of two pages into one.
+        Merges the content streams of two pages into one.  Resource
+        references (i.e. fonts) are maintained from both pages.  The
+        mediabox/cropbox/etc on "self" are not altered.
 
         Stability: Added in v1.4, will exist for all v1.x releases thereafter.
         """
+
+        # First we work on merging the resource dictionaries.  This allows us
+        # to find out what symbols in the content streams we might need to
+        # rename.
+
+        newResources = DictionaryObject()
+        rename = {}
+        originalResources = self["/Resources"].getObject()
+        page2Resources = page2["/Resources"].getObject()
+
+        newFonts, renameFonts = PageObject._mergeResources(originalResources, page2Resources, "/Font")
+        newResources[NameObject("/Font")] = newFonts
+        rename.update(renameFonts)
+
+        newGS, renameGS = PageObject._mergeResources(originalResources, page2Resources, "/ExtGState")
+        newResources[NameObject("/ExtGState")] = newGS
+        rename.update(renameGS)
+
+        # Combine /ProcSet sets.
+        newResources[NameObject("/ProcSet")] = ArrayObject(
+            ImmutableSet(originalResources.get("/ProcSet", ArrayObject()).getObject()).union(
+                ImmutableSet(page2Resources.get("/ProcSet", ArrayObject()).getObject())
+            )
+        )
+
         newContentArray = ArrayObject()
 
         originalContent = self["/Contents"].getObject()
@@ -525,26 +571,7 @@ class PageObject(DictionaryObject):
             newContentArray.append(originalContent)
 
         page2Content = page2['/Contents'].getObject()
-        if isinstance(page2Content, ArrayObject):
-            newContentArray.extend(page2Content)
-        else:
-            newContentArray.append(page2Content)
-
-        newResources = DictionaryObject()
-
-        originalResources = self["/Resources"].getObject()
-        page2Resources = page2["/Resources"].getObject()
-
-        newFonts, renameFonts = PageObject.__mergeResources(originalResources, page2Resources, "/Font")
-        newResources[NameObject("/Font")] = newFonts
-        newGS, renameGS = PageObject.__mergeResources(originalResources, page2Resources, "/ExtGState")
-        newResources[NameObject("/ExtGState")] = newGS
-
-        newResources[NameObject("/ProcSet")] = ArrayObject(
-            ImmutableSet(originalResources.get("/ProcSet", ArrayObject()).getObject()).union(
-                ImmutableSet(page2Resources.get("/ProcSet", ArrayObject()).getObject())
-            )
-        )
+        newContentArray.append(PageObject._contentStreamRename(page2Content, rename))
 
         self[NameObject('/Contents')] = newContentArray
         self[NameObject('/Resources')] = newResources
@@ -593,7 +620,15 @@ class ContentStream(DictionaryObject):
         self.__parseContentStream(stream)
 
     def __parseContentStream(self, stream):
-        stream = StringIO(filters.decodeStreamData(stream))
+        # stream may be an array of streams to concatenate.
+        stream = stream.getObject()
+        if isinstance(stream, ArrayObject):
+            data = ""
+            for s in stream:
+                data += filters.decodeStreamData(s.getObject())
+            stream = StringIO(data)
+        else:
+            stream = StringIO(filters.decodeStreamData(stream))
         operands = []
         while True:
             peek = readNonWhitespace(stream)
@@ -604,9 +639,15 @@ class ContentStream(DictionaryObject):
                 operator = readUntilWhitespace(stream)
                 self.operations.append((operands, operator))
                 operands = []
-                print self.operations[-1]
             else:
                 operands.append(readObject(stream, None))
+        stream.seek(0, 0)
+        data = stream.read()
+        if data.startswith("TJ"):
+            print data[:300]
+        print "----"
+        #print repr(stream.read(25))
+        #print repr(self.operations[-3:])
 
 
 def convertToInt(d, size):
@@ -626,14 +667,16 @@ def convertToInt(d, size):
 if __name__ == "__main__":
     output = PdfFileWriter()
 
-    input1 = PdfFileReader(file("..\\test\\PDFReference16.pdf", "rb"))
+    input1 = PdfFileReader(file("..\\test\\5000-s1-05e.pdf", "rb"))
     page1 = input1.getPage(0)
-    page2 = input1.getPage(1)
-    page3 = input1.getPage(2)
+
+    input2 = PdfFileReader(file("..\\test\\PDFReference16.pdf", "rb"))
+    page2 = input2.getPage(0)
+    page3 = input2.getPage(1)
     page1.mergePage(page2)
     page1.mergePage(page3)
-    output.addPage(page1)
 
+    output.addPage(page1)
     output.write(file("test.pdf", "wb"))
 
 
