@@ -45,6 +45,7 @@ except ImportError:
 import filters
 from generic import *
 from utils import readNonWhitespace, readUntilWhitespace
+from sets import ImmutableSet
 
 class PdfFileWriter(object):
     def __init__(self):
@@ -156,7 +157,12 @@ class PdfFileWriter(object):
             return data
         elif isinstance(data, ArrayObject):
             for i in range(len(data)):
-                data[i] = self._sweepIndirectReferences(externMap, data[i])
+                value = self._sweepIndirectReferences(externMap, data[i])
+                if hasattr(value, "has_key") and value.has_key("__streamdata__"):
+                    # an array value is a stream.  streams must be indirect
+                    # objects, so we need to change this value
+                    value = self._addObject(value)
+                data[i] = value
             return data
         elif isinstance(data, IndirectObject):
             # internal indirect references are fine
@@ -489,6 +495,60 @@ class PageObject(DictionaryObject):
         currentAngle = self.get("/Rotate", 0)
         self[NameObject("/Rotate")] = NumberObject(currentAngle + angle)
 
+    def __mergeResources(res1, res2, resource):
+        newRes = DictionaryObject()
+        newRes.update(res1.get(resource, DictionaryObject()).getObject())
+        page2Res = res2.get(resource, DictionaryObject()).getObject()
+        renameRes = {}
+        for key in page2Res.keys():
+            if newRes.has_key(key) and newRes[key] != page2Res[key]:
+                newname = NameObject(key + "_renamed")
+                renameRes[key] = newname
+                newRes[newname] = page2Res[key]
+            elif not newRes.has_key(key):
+                newRes[key] = page2Res[key]
+        return newRes, renameRes
+    __mergeResources = staticmethod(__mergeResources)
+
+    def mergePage(self, page2):
+        """
+        Merges the content streams of two pages into one.
+
+        Stability: Added in v1.4, will exist for all v1.x releases thereafter.
+        """
+        newContentArray = ArrayObject()
+
+        originalContent = self["/Contents"].getObject()
+        if isinstance(originalContent, ArrayObject):
+            newContentArray.extend(originalContent)
+        else:
+            newContentArray.append(originalContent)
+
+        page2Content = page2['/Contents'].getObject()
+        if isinstance(page2Content, ArrayObject):
+            newContentArray.extend(page2Content)
+        else:
+            newContentArray.append(page2Content)
+
+        newResources = DictionaryObject()
+
+        originalResources = self["/Resources"].getObject()
+        page2Resources = page2["/Resources"].getObject()
+
+        newFonts, renameFonts = PageObject.__mergeResources(originalResources, page2Resources, "/Font")
+        newResources[NameObject("/Font")] = newFonts
+        newGS, renameGS = PageObject.__mergeResources(originalResources, page2Resources, "/ExtGState")
+        newResources[NameObject("/ExtGState")] = newGS
+
+        newResources[NameObject("/ProcSet")] = ArrayObject(
+            ImmutableSet(originalResources.get("/ProcSet", ArrayObject()).getObject()).union(
+                ImmutableSet(page2Resources.get("/ProcSet", ArrayObject()).getObject())
+            )
+        )
+
+        self[NameObject('/Contents')] = newContentArray
+        self[NameObject('/Resources')] = newResources
+
 addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
         """A rectangle, expressed in default user space units, defining the
         boundaries of the physical medium on which the page is intended to be
@@ -566,25 +626,14 @@ def convertToInt(d, size):
 if __name__ == "__main__":
     output = PdfFileWriter()
 
-    #input1 = PdfFileReader(file("input1.pdf", "rb"))
-    #output.addPage(input1.getPage(0))
+    input1 = PdfFileReader(file("..\\test\\PDFReference16.pdf", "rb"))
+    page1 = input1.getPage(0)
+    page2 = input1.getPage(1)
+    page3 = input1.getPage(2)
+    page1.mergePage(page2)
+    page1.mergePage(page3)
+    output.addPage(page1)
 
-    input2 = PdfFileReader(file("..\\test\\5000-s1-05e.pdf", "rb"))
-    page = input2.getPage(1)
-    page.cropBox.upperRight = (200, 200)
-    print repr(page.cropBox)
-    page.cropBox = RectangleObject((20, 20, 40, 40))
-    print repr(page.cropBox)
-    del page.cropBox
-    print repr(page.cropBox)
-    #contents = input2.getObject(page["/Contents"])
-    #contentStream = ContentStream(contents)
-    #for operands,operator in contentStream.operations:
-    #    for operand in operands:
-    #        if isinstance(operand, NameObject):
-    #            print "name object"
-
-    output.addPage(page)
     output.write(file("test.pdf", "wb"))
 
 
