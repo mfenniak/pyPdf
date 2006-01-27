@@ -1,3 +1,25 @@
+Version 1.4, 2006-01-27
+-----------------------
+
+- Add capability to merge pages from multiple PDF files into a single page
+  using the PageObject.mergePage function.  See example code (README or web
+  site) for more information.
+
+- Add ability to modify a page's MediaBox, CropBox, BleedBox, TrimBox, and
+  ArtBox properties through PageObject.  See example code (README or web site)
+  for more information.
+
+- Refactor pdf.py into multiple files: generic.py (contains objects like
+  NameObject, DictionaryObject), filters.py (contains filter code),
+  utils.py (various).  This does not affect importing PdfFileReader
+  or PdfFileWriter.
+
+- Add new decoding functions for standard PDF filters ASCIIHexDecode and
+  ASCII85Decode.
+
+- Change url and download_url to refer to new pybrary.net web site.
+
+
 Version 1.3, 2006-01-23
 -----------------------
 
