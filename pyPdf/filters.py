@@ -157,6 +157,8 @@ def decodeStreamData(stream):
             data = FlateDecode.decode(data, stream.get("/DecodeParms"))
         elif filterType == "/ASCIIHexDecode":
             data = ASCIIHexDecode.decode(data)
+        elif filterType == "/ASCII85Decode":
+            data = ASCII85Decode.decode(data)
         else:
             # unsupported filter
             assert False
