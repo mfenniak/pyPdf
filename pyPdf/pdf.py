@@ -547,13 +547,11 @@ class PageObject(DictionaryObject):
         originalResources = self["/Resources"].getObject()
         page2Resources = page2["/Resources"].getObject()
 
-        newFonts, renameFonts = PageObject._mergeResources(originalResources, page2Resources, "/Font")
-        newResources[NameObject("/Font")] = newFonts
-        rename.update(renameFonts)
-
-        newGS, renameGS = PageObject._mergeResources(originalResources, page2Resources, "/ExtGState")
-        newResources[NameObject("/ExtGState")] = newGS
-        rename.update(renameGS)
+        for res in "/ExtGState", "/Font", "/XObject", "/ColorSpace", "/Pattern", "/Shading":
+            new, newrename = PageObject._mergeResources(originalResources, page2Resources, res)
+            if new:
+                newResources[NameObject(res)] = new
+                rename.update(newrename)
 
         # Combine /ProcSet sets.
         newResources[NameObject("/ProcSet")] = ArrayObject(
@@ -675,6 +673,9 @@ if __name__ == "__main__":
     page3 = input2.getPage(1)
     page1.mergePage(page2)
     page1.mergePage(page3)
+
+    input3 = PdfFileReader(file("..\\test\\cc-cc.pdf", "rb"))
+    page1.mergePage(input3.getPage(0))
 
     output.addPage(page1)
     output.write(file("test.pdf", "wb"))
