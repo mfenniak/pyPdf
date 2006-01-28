@@ -512,7 +512,10 @@ class PageObject(DictionaryObject):
 
     def _contentStreamRename(stream, rename):
         if not rename:
-            return stream
+            if isinstance(stream, ArrayObject):
+                return stream
+            else:
+                return [stream]
         stream = ContentStream(stream)
         newdata = StringIO()
         for operands,operator in stream.operations:
@@ -526,7 +529,7 @@ class PageObject(DictionaryObject):
         retval = DictionaryObject()
         retval["__streamdata__"] = newdata.getvalue()
         retval[NameObject('/Length')] = NumberObject(len(retval["__streamdata__"]))
-        return retval
+        return [retval]
     _contentStreamRename = staticmethod(_contentStreamRename)
 
     def mergePage(self, page2):
@@ -569,7 +572,7 @@ class PageObject(DictionaryObject):
             newContentArray.append(originalContent)
 
         page2Content = page2['/Contents'].getObject()
-        newContentArray.append(PageObject._contentStreamRename(page2Content, rename))
+        newContentArray.extend(PageObject._contentStreamRename(page2Content, rename))
 
         self[NameObject('/Contents')] = newContentArray
         self[NameObject('/Resources')] = newResources
@@ -639,13 +642,6 @@ class ContentStream(DictionaryObject):
                 operands = []
             else:
                 operands.append(readObject(stream, None))
-        stream.seek(0, 0)
-        data = stream.read()
-        if data.startswith("TJ"):
-            print data[:300]
-        print "----"
-        #print repr(stream.read(25))
-        #print repr(self.operations[-3:])
 
 
 def convertToInt(d, size):
