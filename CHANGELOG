@@ -1,3 +1,12 @@
+Version 1.5, 2006-01-28
+-----------------------
+
+- Fix a bug where merging pages did not work in "no-rename" cases when the
+  second page has an array of content streams.
+
+- Remove some debugging output that should not have been present.
+
+
 Version 1.4, 2006-01-27
 -----------------------
 
