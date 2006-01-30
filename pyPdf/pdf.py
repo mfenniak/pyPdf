@@ -149,7 +149,7 @@ class PdfFileWriter(object):
                 value = self._sweepIndirectReferences(externMap, value)
                 if value == None:
                     print objects, value, origvalue
-                if hasattr(value, "has_key") and value.has_key("__streamdata__"):
+                if isinstance(value, StreamObject):
                     # a dictionary value is a stream.  streams must be indirect
                     # objects, so we need to change this value.
                     value = self._addObject(value)
@@ -158,7 +158,7 @@ class PdfFileWriter(object):
         elif isinstance(data, ArrayObject):
             for i in range(len(data)):
                 value = self._sweepIndirectReferences(externMap, data[i])
-                if hasattr(value, "has_key") and value.has_key("__streamdata__"):
+                if isinstance(value, StreamObject):
                     # an array value is a stream.  streams must be indirect
                     # objects, so we need to change this value
                     value = self._addObject(value)
@@ -274,7 +274,7 @@ class PdfFileReader(object):
             objStm = self.getObject(IndirectObject(stmnum, 0, self))
             assert objStm['/Type'] == '/ObjStm'
             assert idx < objStm['/N']
-            streamData = StringIO(filters.decodeStreamData(objStm))
+            streamData = StringIO(objStm.getData())
             for i in range(objStm['/N']):
                 objnum = NumberObject.readFromStream(streamData)
                 readNonWhitespace(streamData)
@@ -374,7 +374,7 @@ class PdfFileReader(object):
                 xrefstream = readObject(stream, self)
                 assert xrefstream["/Type"] == "/XRef"
                 self.cacheIndirectObject(generation, idnum, xrefstream)
-                streamData = StringIO(filters.decodeStreamData(xrefstream))
+                streamData = StringIO(xrefstream.getData())
                 num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
                 entrySizes = xrefstream.get("/W")
                 cnt = 0
@@ -526,25 +526,25 @@ class PageObject(DictionaryObject):
 
     def _contentStreamRename(stream, rename):
         if not rename:
-            if isinstance(stream, ArrayObject):
-                return stream
-            else:
-                return [stream]
+            return stream
         stream = ContentStream(stream)
-        newdata = StringIO()
-        for operands,operator in stream.operations:
-            for op in operands:
+        for operands,operator in stream.operands:
+            for i in range(len(operands)):
+                op = oprands[i]
                 if isinstance(op, NameObject):
-                    op = rename.get(op, op)
-                op.writeToStream(newdata)
-                newdata.write(" ")
-            newdata.write(operator)
-            newdata.write("\n")
-        retval = DictionaryObject()
-        retval["__streamdata__"] = newdata.getvalue()
-        retval[NameObject('/Length')] = NumberObject(len(retval["__streamdata__"]))
-        return [retval]
+                    operands[i] = rename.get(op, op)
+        return stream
     _contentStreamRename = staticmethod(_contentStreamRename)
+
+    def _pushPopGS(contents):
+        # adds a graphics state "push" and "pop" to the beginning and end
+        # of a content stream.  This isolates it from changes such as 
+        # transformation matricies.
+        stream = ContentStream(contents)
+        stream.operations.insert(0, [[], "q"])
+        stream.operations.append([[], "Q"])
+        return stream
+    _pushPopGS = staticmethod(_pushPopGS)
 
     def mergePage(self, page2):
         """
@@ -580,15 +580,14 @@ class PageObject(DictionaryObject):
         newContentArray = ArrayObject()
 
         originalContent = self["/Contents"].getObject()
-        if isinstance(originalContent, ArrayObject):
-            newContentArray.extend(originalContent)
-        else:
-            newContentArray.append(originalContent)
+        newContentArray.append(PageObject._pushPopGS(originalContent))
 
         page2Content = page2['/Contents'].getObject()
-        newContentArray.extend(PageObject._contentStreamRename(page2Content, rename))
+        page2Content = PageObject._contentStreamRename(page2Content, rename)
+        page2Content = PageObject._pushPopGS(page2Content)
+        newContentArray.append(page2Content)
 
-        self[NameObject('/Contents')] = newContentArray
+        self[NameObject('/Contents')] = ContentStream(newContentArray)
         self[NameObject('/Resources')] = newResources
 
 addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
@@ -629,21 +628,22 @@ addRectangleAccessor(PageObject, "artBox", "/ArtBox", ("/CropBox",
         thereafter.""")
 
 
-class ContentStream(DictionaryObject):
+class ContentStream(DecodedStreamObject):
     def __init__(self, stream):
         self.operations = []
-        self.__parseContentStream(stream)
-
-    def __parseContentStream(self, stream):
-        # stream may be an array of streams to concatenate.
+        # stream may be a StreamObject or an ArrayObject containing
+        # multiple StreamObjects to be cat'd together.
         stream = stream.getObject()
         if isinstance(stream, ArrayObject):
             data = ""
             for s in stream:
-                data += filters.decodeStreamData(s.getObject())
+                data += s.getObject().getData()
             stream = StringIO(data)
         else:
-            stream = StringIO(filters.decodeStreamData(stream))
+            stream = StringIO(stream.getData())
+        self.__parseContentStream(stream)
+
+    def __parseContentStream(self, stream):
         operands = []
         while True:
             peek = readNonWhitespace(stream)
@@ -656,6 +656,21 @@ class ContentStream(DictionaryObject):
                 operands = []
             else:
                 operands.append(readObject(stream, None))
+
+    def _getData(self):
+        newdata = StringIO()
+        for operands,operator in self.operations:
+            for op in operands:
+                op.writeToStream(newdata)
+                newdata.write(" ")
+            newdata.write(operator)
+            newdata.write("\n")
+        return newdata.getvalue()
+
+    def _setData(self, value):
+        self.__parseContentStream(StringIO(value))
+
+    _data = property(_getData, _setData)
 
 
 def convertToInt(d, size):
@@ -675,19 +690,19 @@ def convertToInt(d, size):
 if __name__ == "__main__":
     output = PdfFileWriter()
 
-    input1 = PdfFileReader(file("..\\test\\5000-s1-05e.pdf", "rb"))
+    input1 = PdfFileReader(file("test\\5000-s1-05e.pdf", "rb"))
     page1 = input1.getPage(0)
 
-    input2 = PdfFileReader(file("..\\test\\PDFReference16.pdf", "rb"))
+    input2 = PdfFileReader(file("test\\PDFReference16.pdf", "rb"))
     page2 = input2.getPage(0)
     page3 = input2.getPage(1)
     page1.mergePage(page2)
     page1.mergePage(page3)
 
-    input3 = PdfFileReader(file("..\\test\\cc-cc.pdf", "rb"))
+    input3 = PdfFileReader(file("test\\cc-cc.pdf", "rb"))
     page1.mergePage(input3.getPage(0))
 
     output.addPage(page1)
-    output.write(file("test.pdf", "wb"))
+    output.write(file("test\\merge-test.pdf", "wb"))
 
 
