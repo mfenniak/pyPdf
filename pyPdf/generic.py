@@ -63,6 +63,13 @@ def readObject(stream, pdf):
             return DictionaryObject.readFromStream(stream, pdf)
         else:
             return StringObject.readHexStringFromStream(stream)
+    elif tok == '%':
+        # comment
+        while tok not in ('\r', '\n'):
+            tok = stream.read(1)
+        tok = readNonWhitespace(stream)
+        stream.seek(-1, 1)
+        return readObject(stream, pdf)
     else:
         # number object OR indirect reference
         if tok == '+' or tok == '-':
