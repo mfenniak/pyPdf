@@ -151,7 +151,7 @@ def decodeStreamData(stream):
     if len(filters) and not isinstance(filters[0], NameObject):
         # we have a single filter instance
         filters = (filters,)
-    data = stream['__streamdata__']
+    data = stream._data
     for filterType in filters:
         if filterType == "/FlateDecode":
             data = FlateDecode.decode(data, stream.get("/DecodeParms"))
