@@ -395,6 +395,23 @@ class StreamObject(DictionaryObject):
         return retval
     initializeFromDictionary = staticmethod(initializeFromDictionary)
 
+    def flateEncode(self):
+        if self.has_key("/Filter"):
+            f = self["/Filter"]
+            if isinstance(f, ArrayObject):
+                f.insert(0, NameObject("/FlateDecode"))
+            else:
+                newf = ArrayObject()
+                newf.append(NameObject("/FlateDecode"))
+                newf.append(f)
+                f = newf
+        else:
+            f = NameObject("/FlateDecode")
+        retval = EncodedStreamObject()
+        retval[NameObject("/Filter")] = f
+        retval._data = filters.FlateDecode.encode(self._data)
+        return retval
+
 
 class DecodedStreamObject(StreamObject):
     def getData(self):

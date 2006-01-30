@@ -75,6 +75,10 @@ class FlateDecode(object):
         return data
     decode = staticmethod(decode)
 
+    def encode(data):
+        return zlib.compress(data)
+    encode = staticmethod(encode)
+
 class ASCIIHexDecode(object):
     def decode(data, decodeParms=None):
         retval = ""

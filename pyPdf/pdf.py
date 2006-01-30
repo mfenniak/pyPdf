@@ -590,6 +590,21 @@ class PageObject(DictionaryObject):
         self[NameObject('/Contents')] = ContentStream(newContentArray)
         self[NameObject('/Resources')] = newResources
 
+    def compressContentStreams(self):
+        """
+        Join all content streams and apply a FlateDecode filter to decrease
+        the stream's size.
+
+        Stability: Added in v1.6, will exist for all v1.x releases thereafter.
+        However, if content stream compression is ever handled in a different
+        and/or more transparent way, this function may not do anything.
+        """
+        content = self["/Contents"].getObject()
+        if not isinstance(content, ContentStream):
+            content = ContentStream(content)
+        self[NameObject("/Contents")] = content.flateEncode()
+
+
 addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
         """A rectangle, expressed in default user space units, defining the
         boundaries of the physical medium on which the page is intended to be
@@ -701,6 +716,8 @@ if __name__ == "__main__":
 
     input3 = PdfFileReader(file("test\\cc-cc.pdf", "rb"))
     page1.mergePage(input3.getPage(0))
+
+    page1.compressContentStreams()
 
     output.addPage(page1)
     output.write(file("test\\merge-test.pdf", "wb"))
