@@ -36,6 +36,7 @@ __author_email__ = "mfenniak@pobox.com"
 
 import re
 from utils import readNonWhitespace
+import filters
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -310,20 +311,15 @@ class DictionaryObject(dict, PdfObject):
     def writeToStream(self, stream):
         stream.write("<<\n")
         for key, value in self.items():
-            if key != "__streamdata__":
-                key.writeToStream(stream)
-                stream.write(" ")
-                value.writeToStream(stream)
-                stream.write("\n")
+            key.writeToStream(stream)
+            stream.write(" ")
+            value.writeToStream(stream)
+            stream.write("\n")
         stream.write(">>")
-        if self.has_key("__streamdata__"):
-            stream.write("\nstream\n")
-            stream.write(self["__streamdata__"])
-            stream.write("\nendstream")
 
     def readFromStream(stream, pdf):
         assert stream.read(2) == "<<"
-        retval = DictionaryObject()
+        data = {}
         while True:
             tok = readNonWhitespace(stream)
             if tok == ">":
@@ -334,10 +330,10 @@ class DictionaryObject(dict, PdfObject):
             tok = readNonWhitespace(stream)
             stream.seek(-1, 1)
             value = readObject(stream, pdf)
-            if retval.has_key(key):
-                # multiple definitions of key not handled yet
+            if data.has_key(key):
+                # multiple definitions of key not permitted
                 assert False
-            retval[key] = value
+            data[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
         if s == 's' and stream.read(5) == 'tream':
@@ -347,20 +343,87 @@ class DictionaryObject(dict, PdfObject):
                 # read \n after
                 stream.read(1)
             # this is a stream object, not a dictionary
-            assert retval.has_key("/Length")
-            length = retval["/Length"]
+            assert data.has_key("/Length")
+            length = data["/Length"]
             if isinstance(length, IndirectObject):
                 t = stream.tell()
                 length = pdf.getObject(length)
                 stream.seek(t, 0)
-            retval["__streamdata__"] = stream.read(length)
-            e = readNonWhitespace(stream)
-            ndstream = stream.read(8)
-            assert e == "e" and ndstream == "ndstream"
+            data["__streamdata__"] = stream.read(length)
+            # (sigh) - the odd PDF file has a length that is too long, so we'd
+            # need to read backwards to find the "endstream" ending.  Really,
+            # who cares - I am sure this code works properly given a correct
+            # PDF file, so I'm removing this assertion.  It's not necessary to
+            # read to the end of the object because streams are always in
+            # indirect objects - there's never an object after this one.
+            #e = readNonWhitespace(stream)
+            #ndstream = stream.read(8)
+            #assert e == "e" and ndstream == "ndstream"
         else:
             stream.seek(pos, 0)
-        return retval
+        if data.has_key("__streamdata__"):
+            return StreamObject.initializeFromDictionary(data)
+        else:
+            retval = DictionaryObject()
+            retval.update(data)
+            return retval
     readFromStream = staticmethod(readFromStream)
+
+
+class StreamObject(DictionaryObject):
+    def __init__(self):
+        self._data = None
+        self.decodedSelf = None
+
+    def writeToStream(self, stream):
+        self[NameObject("/Length")] = NumberObject(len(self._data))
+        DictionaryObject.writeToStream(self, stream)
+        del self["/Length"]
+        stream.write("\nstream\n")
+        stream.write(self._data)
+        stream.write("\nendstream")
+
+    def initializeFromDictionary(data):
+        if data.has_key("/Filter"):
+            retval = EncodedStreamObject()
+        else:
+            retval = DecodedStreamObject()
+        retval._data = data["__streamdata__"]
+        del data["__streamdata__"]
+        del data["/Length"]
+        retval.update(data)
+        return retval
+    initializeFromDictionary = staticmethod(initializeFromDictionary)
+
+
+class DecodedStreamObject(StreamObject):
+    def getData(self):
+        return self._data
+
+    def setData(self, data):
+        self._data = data
+
+
+class EncodedStreamObject(StreamObject):
+    def __init__(self):
+        self.decodedSelf = None
+
+    def getData(self):
+        if self.decodedSelf:
+            # cached version of decoded object
+            return self.decodedSelf.getData()
+        else:
+            # create decoded object
+            decoded = StreamObject()
+            decoded._data = filters.decodeStreamData(self)
+            for key, value in self.items():
+                if not key in ("/Length", "/Filter", "/DecodeParms"):
+                    decoded[key] = value
+            self.decodedSelf = decoded
+            return decoded._data
+
+    def setData(self, data):
+        raise "Creating EncodedStreamObject is not currently supported"
 
 
 class RectangleObject(ArrayObject):
