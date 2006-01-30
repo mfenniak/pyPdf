@@ -312,7 +312,7 @@ class PdfFileReader(object):
 
     def read(self, stream):
         # start at the end:
-        stream.seek(-2, 2)
+        stream.seek(-1, 2)
         line = ''
         while not line:
             line = self.readNextEndLine(stream)
@@ -367,7 +367,7 @@ class PdfFileReader(object):
                     startxref = newTrailer[NameObject("/Prev")]
                 else:
                     break
-            else:
+            elif x.isdigit():
                 # PDF 1.5+ Cross-Reference Stream
                 stream.seek(-1, 1)
                 idnum, generation = self.readObjectHeader(stream)
@@ -415,6 +415,20 @@ class PdfFileReader(object):
                 if xrefstream.has_key("/Prev"):
                     startxref = xrefstream["/Prev"]
                 else:
+                    break
+            else:
+                # bad xref character at startxref.  Let's see if we can find
+                # the xref table nearby, as we've observed this error with an
+                # off-by-one before.
+                stream.seek(-11, 1)
+                tmp = stream.read(20)
+                xref_loc = tmp.find("xref")
+                if xref_loc != -1:
+                    startxref -= (10 - xref_loc)
+                    continue
+                else:
+                    # no xref table found at specified location
+                    assert False
                     break
 
     def readNextEndLine(self, stream):
