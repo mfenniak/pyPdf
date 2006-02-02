@@ -350,15 +350,24 @@ class DictionaryObject(dict, PdfObject):
                 length = pdf.getObject(length)
                 stream.seek(t, 0)
             data["__streamdata__"] = stream.read(length)
-            # (sigh) - the odd PDF file has a length that is too long, so we'd
-            # need to read backwards to find the "endstream" ending.  Really,
-            # who cares - I am sure this code works properly given a correct
-            # PDF file, so I'm removing this assertion.  It's not necessary to
-            # read to the end of the object because streams are always in
-            # indirect objects - there's never an object after this one.
-            #e = readNonWhitespace(stream)
-            #ndstream = stream.read(8)
-            #assert e == "e" and ndstream == "ndstream"
+            e = readNonWhitespace(stream)
+            ndstream = stream.read(8)
+            if (e + ndstream) != "endstream":
+                # (sigh) - the odd PDF file has a length that is too long, so
+                # we need to read backwards to find the "endstream" ending.
+                # ReportLab (unknown version) generates files with this bug,
+                # and Python users into PDF files tend to be our audience.
+                # we need to do this to correct the streamdata and chop off
+                # an extra character.
+                pos = stream.tell()
+                stream.seek(-10, 1)
+                end = stream.read(9)
+                if end == "endstream":
+                    # we found it by looking back one character further.
+                    data["__streamdata__"] = data["__streamdata__"][:-1]
+                else:
+                    stream.seek(pos, 0)
+                    raise "Unable to find 'endstream' marker after stream."
         else:
             stream.seek(pos, 0)
         if data.has_key("__streamdata__"):
