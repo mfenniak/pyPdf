@@ -528,9 +528,9 @@ class PageObject(DictionaryObject):
         if not rename:
             return stream
         stream = ContentStream(stream)
-        for operands,operator in stream.operands:
+        for operands,operator in stream.operations:
             for i in range(len(operands)):
-                op = oprands[i]
+                op = operands[i]
                 if isinstance(op, NameObject):
                     operands[i] = rename.get(op, op)
         return stream
