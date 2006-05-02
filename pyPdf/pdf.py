@@ -346,7 +346,7 @@ class PdfFileReader(object):
                 stream.seek(-1, 1)
                 cnt = 0
                 while cnt < size:
-                    line = stream.readline()
+                    line = stream.read(20)
                     offset, generation = line[:16].split(" ")
                     offset, generation = int(offset), int(generation)
                     if not self.xref.has_key(generation):
@@ -524,10 +524,10 @@ class PageObject(DictionaryObject):
         return newRes, renameRes
     _mergeResources = staticmethod(_mergeResources)
 
-    def _contentStreamRename(stream, rename):
+    def _contentStreamRename(stream, rename, pdf):
         if not rename:
             return stream
-        stream = ContentStream(stream)
+        stream = ContentStream(stream, pdf)
         for operands,operator in stream.operations:
             for i in range(len(operands)):
                 op = operands[i]
@@ -536,11 +536,11 @@ class PageObject(DictionaryObject):
         return stream
     _contentStreamRename = staticmethod(_contentStreamRename)
 
-    def _pushPopGS(contents):
+    def _pushPopGS(contents, pdf):
         # adds a graphics state "push" and "pop" to the beginning and end
         # of a content stream.  This isolates it from changes such as 
         # transformation matricies.
-        stream = ContentStream(contents)
+        stream = ContentStream(contents, pdf)
         stream.operations.insert(0, [[], "q"])
         stream.operations.append([[], "Q"])
         return stream
@@ -580,14 +580,14 @@ class PageObject(DictionaryObject):
         newContentArray = ArrayObject()
 
         originalContent = self["/Contents"].getObject()
-        newContentArray.append(PageObject._pushPopGS(originalContent))
+        newContentArray.append(PageObject._pushPopGS(originalContent, self.pdf))
 
         page2Content = page2['/Contents'].getObject()
-        page2Content = PageObject._contentStreamRename(page2Content, rename)
-        page2Content = PageObject._pushPopGS(page2Content)
+        page2Content = PageObject._contentStreamRename(page2Content, rename, self.pdf)
+        page2Content = PageObject._pushPopGS(page2Content, self.pdf)
         newContentArray.append(page2Content)
 
-        self[NameObject('/Contents')] = ContentStream(newContentArray)
+        self[NameObject('/Contents')] = ContentStream(newContentArray, self.pdf)
         self[NameObject('/Resources')] = newResources
 
     def compressContentStreams(self):
@@ -601,7 +601,7 @@ class PageObject(DictionaryObject):
         """
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
-            content = ContentStream(content)
+            content = ContentStream(content, self.pdf)
         self[NameObject("/Contents")] = content.flateEncode()
 
 
@@ -644,7 +644,8 @@ addRectangleAccessor(PageObject, "artBox", "/ArtBox", ("/CropBox",
 
 
 class ContentStream(DecodedStreamObject):
-    def __init__(self, stream):
+    def __init__(self, stream, pdf):
+        self.pdf = pdf
         self.operations = []
         # stream may be a StreamObject or an ArrayObject containing
         # multiple StreamObjects to be cat'd together.
@@ -659,26 +660,78 @@ class ContentStream(DecodedStreamObject):
         self.__parseContentStream(stream)
 
     def __parseContentStream(self, stream):
+        # file("f:\\tmp.txt", "w").write(stream.read())
+        stream.seek(0, 0)
         operands = []
         while True:
             peek = readNonWhitespace(stream)
             if peek == '':
                 break
             stream.seek(-1, 1)
-            if peek.isalpha():
-                operator = readUntilWhitespace(stream)
-                self.operations.append((operands, operator))
-                operands = []
+            if peek.isalpha() or peek == "'" or peek == "\"":
+                operator = readUntilWhitespace(stream, maxchars=2)
+                if operator == "BI":
+                    # begin inline image - a completely different parsing
+                    # mechanism is required, of course... thanks buddy...
+                    assert operands == []
+                    ii = self._readInlineImage(stream)
+                    self.operations.append((ii, "INLINE IMAGE"))
+                else:
+                    self.operations.append((operands, operator))
+                    operands = []
             else:
                 operands.append(readObject(stream, None))
+
+    def _readInlineImage(self, stream):
+        # begin reading just after the "BI" - begin image
+        # first read the dictionary of settings.
+        settings = DictionaryObject()
+        while True:
+            tok = readNonWhitespace(stream)
+            stream.seek(-1, 1)
+            if tok == "I":
+                # "ID" - begin of image data
+                break
+            key = readObject(stream, self.pdf)
+            tok = readNonWhitespace(stream)
+            stream.seek(-1, 1)
+            value = readObject(stream, self.pdf)
+            settings[key] = value
+        # left at beginning of ID
+        tmp = stream.read(3)
+        assert tmp[:2] == "ID"
+        data = ""
+        while True:
+            tok = stream.read(1)
+            if tok == "E":
+                next = stream.read(1)
+                if next == "I":
+                    break
+                else:
+                    stream.seek(-1, 1)
+                    data += tok
+            else:
+                data += tok
+        x = readNonWhitespace(stream)
+        stream.seek(-1, 1)
+        return {"settings": settings, "data": data}
 
     def _getData(self):
         newdata = StringIO()
         for operands,operator in self.operations:
-            for op in operands:
-                op.writeToStream(newdata)
-                newdata.write(" ")
-            newdata.write(operator)
+            if operator == "INLINE IMAGE":
+                newdata.write("BI")
+                dicttext = StringIO()
+                operands["settings"].writeToStream(dicttext)
+                newdata.write(dicttext.getvalue()[2:-2])
+                newdata.write("ID ")
+                newdata.write(operands["data"])
+                newdata.write("EI")
+            else:
+                for op in operands:
+                    op.writeToStream(newdata)
+                    newdata.write(" ")
+                newdata.write(operator)
             newdata.write("\n")
         return newdata.getvalue()
 

@@ -34,13 +34,15 @@ Utility functions for PDF library.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "mfenniak@pobox.com"
 
-def readUntilWhitespace(stream):
+def readUntilWhitespace(stream, maxchars=None):
     txt = ""
     while True:
         tok = stream.read(1)
         if tok.isspace() or not tok:
             break
         txt += tok
+        if len(txt) == maxchars:
+            break
     return txt
 
 def readNonWhitespace(stream):
