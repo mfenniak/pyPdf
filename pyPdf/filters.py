@@ -34,12 +34,42 @@ Implementation of stream filters for PDF.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "mfenniak@pobox.com"
 
-import zlib
 from generic import NameObject
+
+try:
+    import zlib
+    def decompress(data):
+        return zlib.decompress(data)
+    def compress(data):
+        return zlib.compress(data)
+except ImportError:
+    # Unable to import zlib.  If running in IronPython, try using
+    # System.IO.Compression instead.
+    from System import IO, Text
+    _encoding = Text.ASCIIEncoding()
+    def _string_to_bytearr(string):
+        return _encoding.GetBytes(string)
+    def _bytearr_to_string(bytes):
+        return _encoding.GetString(bytes)
+    def _read_bytes(gz, byteArray):
+        pass
+    def decompress(data):
+        bytes = _string_to_bytearr(data)
+        ms = IO.MemoryStream()
+        ms.Write(bytes, 0, bytes.Length)
+        ms.Position = 0  # fseek 0
+        gz = IO.Compression.GZipStream(ms, IO.Compression.CompressionMode.Decompress)
+        bytes = _read_bytes(gz)
+        retval = _bytearr_to_string(bytes)
+        gz.Close()
+        return retval
+    # implementation not complete or tested, but checked in just for fun.
+    
+
 
 class FlateDecode(object):
     def decode(data, decodeParms):
-        data = zlib.decompress(data)
+        data = decompress(data)
         predictor = 1
         if decodeParms:
             predictor = decodeParms.get("/Predictor", 1)
@@ -76,7 +106,7 @@ class FlateDecode(object):
     decode = staticmethod(decode)
 
     def encode(data):
-        return zlib.compress(data)
+        return compress(data)
     encode = staticmethod(encode)
 
 class ASCIIHexDecode(object):
