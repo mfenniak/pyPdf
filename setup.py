@@ -5,6 +5,7 @@ from distutils.core import setup
 long_description = """
 A Pure-Python library built as a PDF toolkit.  It is capable of:
     
+- extracting document information (title, author, ...),
 - splitting documents page by page,
 - merging documents page by page,
 - cropping pages,
