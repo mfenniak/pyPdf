@@ -209,6 +209,23 @@ class PdfFileReader(object):
         self.read(stream)
         self.stream = stream
 
+    def getDocumentInfo(self):
+        """
+        Retrieves the PDF file's document information dictionary, if it
+        exists.  Returns a DocumentInformation instance, or None.
+        Note that some PDF files use metadata streams instead of docinfo
+        dictionaries, and these metadata streams will not be accessed by this
+        function.
+
+        Stability: Added in v1.6, will exist for all v1.x releases.
+        """
+        if not self.trailer.has_key("/Info"):
+            return None
+        obj = self.getObject(self.trailer['/Info'])
+        retval = DocumentInformation()
+        retval.update(obj)
+        return retval
+
     def getNumPages(self):
         """
         Returns the number of pages in this PDF file.
@@ -482,6 +499,7 @@ def addRectangleAccessor(klass, propname, name, fallback, docs):
 
 class PageObject(DictionaryObject):
     def __init__(self, pdf):
+        DictionaryObject.__init__(self)
         self.pdf = pdf
 
     def rotateClockwise(self, angle):
@@ -739,6 +757,44 @@ class ContentStream(DecodedStreamObject):
         self.__parseContentStream(StringIO(value))
 
     _data = property(_getData, _setData)
+
+
+class DocumentInformation(DictionaryObject):
+    def __init__(self):
+        DictionaryObject.__init__(self)
+
+    title = property(
+            lambda self: self.get("/Title", None),
+            None, None,
+            """The document's title, or None if not specified.  Added to pyPdf
+            in v1.6, will exist for all v1.x.""")
+
+    author = property(
+            lambda self: self.get("/Author", None),
+            None, None,
+            """The name of the person who created the document, or None if not
+            specified.  Added to pyPdf in v1.6, will exist for all v1.x.""")
+
+    subject = property(
+            lambda self: self.get("/Subject", None),
+            None, None,
+            """The subject of the document, or None if not specified.  Added to
+            pyPdf in v1.6, will exist for all v1.x.""")
+
+    creator = property(
+            lambda self: self.get("/Creator", None),
+            None, None,
+            """If the document was converted to PDF from another format, the
+            name of the application (for example, OpenOffice) that created the
+            original document from which it was converted, or None if not
+            specified.  Added to pyPdf in v1.6, will exist for all v1.x.""")
+
+    producer = property(
+            lambda self: self.get("/Producer", None),
+            None, None,
+            """If the document was converted to PDF from another format, the
+            name of the application (for example, OSX Quartz) that converted it
+            to PDF.  Added to pyPdf in v1.6, will exist for all v1.x.""")
 
 
 def convertToInt(d, size):
