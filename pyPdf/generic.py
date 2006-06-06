@@ -89,6 +89,16 @@ class PdfObject(object):
         return self
 
 
+class NullObject(PdfObject):
+    def writeToSTream(self, stream):
+        stream.write("null")
+
+    def readFromStream(stream):
+        assert stream.read(4) == "null"
+        return NullObject
+    readFromStream = staticmethod(readFromStream)
+
+
 class BooleanObject(PdfObject):
     def __init__(self, value):
         self.value = value
