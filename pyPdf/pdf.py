@@ -355,25 +355,38 @@ class PdfFileReader(object):
                 assert ref[:3] == "ref"
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
-                num = readObject(stream, self)
-                readNonWhitespace(stream)
-                stream.seek(-1, 1)
-                size = readObject(stream, self)
-                readNonWhitespace(stream)
-                stream.seek(-1, 1)
-                cnt = 0
-                while cnt < size:
-                    line = stream.read(20)
-                    offset, generation = line[:16].split(" ")
-                    offset, generation = int(offset), int(generation)
-                    if not self.xref.has_key(generation):
-                        self.xref[generation] = {}
-                    self.xref[generation][num] = offset
-                    cnt += 1
-                    num += 1
-                readNonWhitespace(stream)
-                stream.seek(-1, 1)
-                assert stream.read(7) == "trailer"
+                while 1:
+                    num = readObject(stream, self)
+                    readNonWhitespace(stream)
+                    stream.seek(-1, 1)
+                    size = readObject(stream, self)
+                    readNonWhitespace(stream)
+                    stream.seek(-1, 1)
+                    cnt = 0
+                    while cnt < size:
+                        line = stream.read(20)
+                        offset, generation = line[:16].split(" ")
+                        offset, generation = int(offset), int(generation)
+                        if not self.xref.has_key(generation):
+                            self.xref[generation] = {}
+                        if self.xref[generation].has_key(num):
+                            "It really seems like we should allow the last"
+                            "xref table in the file to override previous"
+                            "ones. Since we read the file backwards, assume"
+                            "any existing key is already set correctly."
+                            pass
+                        else:
+                            self.xref[generation][num] = offset
+                        cnt += 1
+                        num += 1
+                    readNonWhitespace(stream)
+                    stream.seek(-1, 1)
+                    trailertag = stream.read(7)
+                    if trailertag != "trailer":
+                        "more xrefs!"
+                        stream.seek(-7, 1)
+                    else:
+                        break
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
                 newTrailer = readObject(stream, self)
