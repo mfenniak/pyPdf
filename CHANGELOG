@@ -1,3 +1,36 @@
+Version 1.6, 2006-06-06
+-----------------------
+
+ - Add basic support for comments in PDF files.  This allows us to read some
+   ReportLab PDFs that could not be read before.
+
+ - Add "auto-repair" for finding xref table at slightly bad locations.
+
+ - New StreamObject backend, cleaner and more powerful.  Allows the use of
+   stream filters more easily, including compressed streams.
+
+ - Add a graphics state push/pop around page merges.  Improves quality of
+   page merges when one page's content stream leaves the graphics 
+   in an abnormal state.
+
+ - Add PageObject.compressContentStreams function, which filters all content
+   streams and compresses them.  This will reduce the size of PDF pages,
+   especially after they could have been decompressed in a mergePage
+   operation.
+
+ - Support inline images in PDF content streams.
+
+ - Add support for using .NET framework compression when zlib is not
+   available.  This does not make pyPdf compatible with IronPython, but it
+   is a first step.
+
+ - Add support for reading the document information dictionary, and extracting
+   title, author, subject, producer and creator tags.
+
+ - Add patch to support NullObject and multiple xref streams, from Bradley
+   Lawrence.
+
+
 Version 1.5, 2006-01-28
 -----------------------
 
