@@ -635,6 +635,38 @@ class PageObject(DictionaryObject):
             content = ContentStream(content, self.pdf)
         self[NameObject("/Contents")] = content.flateEncode()
 
+    def extractText(self):
+        """
+        Locate all text drawing commands, in the order they are provided in
+        the content stream, and extract the text.  This works well for some
+        PDF files, but poorly for others, depending on the generator used.
+        This will be refined in the future.  Do not rely on the order of text
+        coming out of this function, as it will change if this function is 
+        made more sophisticated.
+
+        Stability: Added in v1.7, will exist for all v1.x releases thereafter.
+        May be overhauled to provide more ordered text in the future.
+        """
+        text = ""
+        content = self["/Contents"].getObject()
+        if not isinstance(content, ContentStream):
+            content = ContentStream(content, self.pdf)
+        for operands,operator in content.operations:
+            if operator == "Tj":
+                text += operands[0]
+            elif operator == "T*":
+                text += "\n"
+            elif operator == "'":
+                text += "\n"
+                text += operands[0]
+            elif operator == "\"":
+                text += "\n"
+                text += operands[2]
+            elif operator == "TJ":
+                for i in operands[0]:
+                    if isinstance(i, StringObject):
+                        text += i
+        return text
 
 addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
         """A rectangle, expressed in default user space units, defining the
