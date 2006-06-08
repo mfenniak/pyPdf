@@ -44,7 +44,7 @@ except ImportError:
 
 import filters
 from generic import *
-from utils import readNonWhitespace, readUntilWhitespace
+from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
 from sets import ImmutableSet
 
 class PdfFileWriter(object):
@@ -226,6 +226,10 @@ class PdfFileReader(object):
         retval.update(obj)
         return retval
 
+    documentInfo = property(lambda self: self.getDocumentInfo(), None, None,
+            """See PdfFileReader.getDocumentInfo().  This property was added 
+            in pyPdf v1.7, and will exist for all future v1.x releases.""")
+
     def getNumPages(self):
         """
         Returns the number of pages in this PDF file.
@@ -235,6 +239,10 @@ class PdfFileReader(object):
         if self.flattenedPages == None:
             self._flatten()
         return len(self.flattenedPages)
+
+    numPages = property(lambda self: self.getNumPages(), None, None,
+            """See PdfFileReader.getNamePages().  This property was added in
+            v1.7, and will exist for all future v1.x releases.""")
 
     def getPage(self, pageNumber):
         """
@@ -248,6 +256,10 @@ class PdfFileReader(object):
         if self.flattenedPages == None:
             self._flatten()
         return self.flattenedPages[pageNumber]
+
+    pages = property(lambda self: ConvertFunctionsToVirtualList(self.getNumPages, self.getPage),
+            None, None, """Returns a sequence of pages.  This property was
+            added in v1.7 and will exist for all future v1.x releases.""")
 
     def _flatten(self, pages = None, inherit = None):
         inheritablePageAttributes = (

@@ -50,3 +50,24 @@ def readNonWhitespace(stream):
     while tok == '\n' or tok == '\r' or tok == ' ' or tok == '\t':
         tok = stream.read(1)
     return tok
+
+class ConvertFunctionsToVirtualList(object):
+    def __init__(self, lengthFunction, getFunction):
+        self.lengthFunction = lengthFunction
+        self.getFunction = getFunction
+
+    def __len__(self):
+        return self.lengthFunction()
+
+    def __getitem__(self, index):
+        if not isinstance(index, int):
+            raise TypeError, "sequence indices must be integers"
+        len_self = len(self)
+        if index < 0:
+            # support negative indexes
+            index = len_self + index
+        if index < 0 or index >= len_self:
+            raise IndexError, "sequence index out of range"
+        return self.getFunction(index)
+
+
