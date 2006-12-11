@@ -1,3 +1,20 @@
+Version 1.7, 2006-12-10
+-----------------------
+
+ - Fix a bug when using a single page object in two PdfFileWriter objects.
+
+ - Adjust PyPDF to be tolerant of whitespace characters that don't belong
+   during a stream object.
+
+ - Add documentInfo property to PdfFileReader.
+
+ - Add numPages property to PdfFileReader.
+
+ - Add pages property to PdfFileReader.
+
+ - Add extractText function to PdfFileReader.
+
+
 Version 1.6, 2006-06-06
 -----------------------
 
