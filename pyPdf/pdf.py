@@ -80,7 +80,7 @@ class PdfFileWriter(object):
         self._objects.append(obj)
         return IndirectObject(len(self._objects), 0, self)
 
-    def _getObject(self, ido):
+    def getObject(self, ido):
         assert ido.pdf == self
         return self._objects[ido.idnum - 1]
 
@@ -94,7 +94,7 @@ class PdfFileWriter(object):
         assert page["/Type"] == "/Page"
         page[NameObject("/Parent")] = self._pages
         page = self._addObject(page)
-        pages = self._getObject(self._pages)
+        pages = self.getObject(self._pages)
         pages["/Kids"].append(page)
         pages["/Count"] = NumberObject(pages["/Count"] + 1)
 
@@ -171,7 +171,7 @@ class PdfFileWriter(object):
                     return data
                 else:
                     self.stack.append(data.idnum)
-                    realdata = self._getObject(data)
+                    realdata = self.getObject(data)
                     self._sweepIndirectReferences(externMap, realdata)
                     self.stack.pop()
                     return data
