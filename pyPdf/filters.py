@@ -161,14 +161,16 @@ class ASCII85Decode(object):
         group = []
         x = 0
         hitEod = False
+        # remove all whitespace from data
+        data = [y for y in data if not (y in ' \n\r\t')]
         while not hitEod:
             c = data[x]
             if len(retval) == 0 and c == "<" and data[x+1] == "~":
                 x += 2
                 continue
-            elif c.isspace():
-                x += 1
-                continue
+            #elif c.isspace():
+            #    x += 1
+            #    continue
             elif c == 'z':
                 assert len(group) == 0
                 retval += '\x00\x00\x00\x00'
