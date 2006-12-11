@@ -348,6 +348,10 @@ class DictionaryObject(dict, PdfObject):
         s = readNonWhitespace(stream)
         if s == 's' and stream.read(5) == 'tream':
             eol = stream.read(1)
+            # odd PDF file output has spaces after 'stream' keyword but before EOL.
+            # patch provided by Danial Sandler
+            while eol == ' ':
+                eol = stream.read(1)
             assert eol in ("\n", "\r")
             if eol == "\r":
                 # read \n after
