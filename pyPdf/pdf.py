@@ -47,6 +47,9 @@ from generic import *
 from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
 from sets import ImmutableSet
 
+##
+# This class supports writing PDF files out, given pages produced by another
+# class (typically {@link #PdfFileReader PdfFileReader}).
 class PdfFileWriter(object):
     def __init__(self):
         self._header = "%PDF-1.3"
@@ -84,13 +87,15 @@ class PdfFileWriter(object):
         assert ido.pdf == self
         return self._objects[ido.idnum - 1]
 
+    ##
+    # Adds a page to this PDF file.  The page is usually acquired from a
+    # {@link #PdfFileReader PdfFileReader} instance.
+    # <p>
+    # Stability: Added in v1.0, will exist for all v1.x releases.
+    #
+    # @param page The page to add to the document.  This argument should be
+    #             an instance of {@link #PageObject PageObject}.
     def addPage(self, page):
-        """
-        Adds a page to this PDF file.  A dictionary of /Type = /Page.
-        Currently usually aquired from PdfFileReader.getPage().
-
-        Stability: Added in v1.0, will exist for all v1.x releases.
-        """
         assert page["/Type"] == "/Page"
         page[NameObject("/Parent")] = self._pages
         page = self._addObject(page)
@@ -98,14 +103,13 @@ class PdfFileWriter(object):
         pages["/Kids"].append(page)
         pages["/Count"] = NumberObject(pages["/Count"] + 1)
 
+    ##
+    # Writes the collection of pages added to this object out as a PDF file.
+    # <p>
+    # Stability: Added in v1.0, will exist for all v1.x releases.
+    # @param stream An object to write the file to.  The object must support
+    # the write method, and the tell method, similar to a file object.
     def write(self, stream):
-        """
-        Writes this PDF file to an output stream.  Writes the file as a
-        PDF-1.3 format file.
-
-        Stability: Added in v1.0, will exist for all v1.x releases.
-        """
-
         externalReferenceMap = {}
         self.stack = []
         self._sweepIndirectReferences(externalReferenceMap, self._root)
@@ -195,30 +199,31 @@ class PdfFileWriter(object):
             return data
 
 
+##
+# Initializes a PdfFileReader object.  This operation can take some time, as
+# the PDF stream's cross-reference tables are read into memory.
+# <p>
+# Stability: Added in v1.0, will exist for all v1.x releases.
+#
+# @param stream An object that supports the standard read and seek methods
+#               similar to a file object.
 class PdfFileReader(object):
     def __init__(self, stream):
-        """
-        Initializes a PdfFileReader object.  This operation can take some time,
-        as the PDF file cross-reference tables are read.  "stream" parameter
-        must be a data stream, not a string or a path name.
-
-        Stability: Added in v1.0, will exist for all v1.x releases.
-        """
         self.flattenedPages = None
         self.resolvedObjects = {}
         self.read(stream)
         self.stream = stream
 
+    ##
+    # Retrieves the PDF file's document information dictionary, if it exists.
+    # Note that some PDF files use metadata streams instead of docinfo
+    # dictionaries, and these metadata streams will not be accessed by this
+    # function.
+    # <p>
+    # Stability: Added in v1.6, will exist for all future v1.x releases.
+    # @return Returns a {@link #DocumentInformation DocumentInformation}
+    #         instance, or None if none exists.
     def getDocumentInfo(self):
-        """
-        Retrieves the PDF file's document information dictionary, if it
-        exists.  Returns a DocumentInformation instance, or None.
-        Note that some PDF files use metadata streams instead of docinfo
-        dictionaries, and these metadata streams will not be accessed by this
-        function.
-
-        Stability: Added in v1.6, will exist for all v1.x releases.
-        """
         if not self.trailer.has_key("/Info"):
             return None
         obj = self.getObject(self.trailer['/Info'])
@@ -226,40 +231,50 @@ class PdfFileReader(object):
         retval.update(obj)
         return retval
 
-    documentInfo = property(lambda self: self.getDocumentInfo(), None, None,
-            """See PdfFileReader.getDocumentInfo().  This property was added 
-            in pyPdf v1.7, and will exist for all future v1.x releases.""")
+    ##
+    # Read-only property that accesses the {@link
+    # #PdfFileReader.getDocumentInfo getDocumentInfo} function.
+    # <p>
+    # Stability: Added in v1.7, will exist for all future v1.x releases.
+    documentInfo = property(lambda self: self.getDocumentInfo(), None, None)
 
+    ##
+    # Calculates the number of pages in this PDF file.
+    # <p>
+    # Stability: Added in v1.0, will exist for all v1.x releases.
+    # @return Returns an integer.
     def getNumPages(self):
-        """
-        Returns the number of pages in this PDF file.
-
-        Stability: Added in v1.0, will exist for all v1.x releases.
-        """
         if self.flattenedPages == None:
             self._flatten()
         return len(self.flattenedPages)
 
-    numPages = property(lambda self: self.getNumPages(), None, None,
-            """See PdfFileReader.getNamePages().  This property was added in
-            v1.7, and will exist for all future v1.x releases.""")
+    ##
+    # Read-only property that accesses the {@link #PdfFileReader.getNumPages
+    # getNumPages} function.
+    # <p>
+    # Stability: Added in v1.7, will exist for all future v1.x releases.
+    numPages = property(lambda self: self.getNumPages(), None, None)
 
+    ##
+    # Retrieves a page by number from this PDF file.
+    # <p>
+    # Stability: Added in v1.0, will exist for all v1.x releases.
+    # @return Returns a {@link #PageObject PageObject} instance.
     def getPage(self, pageNumber):
-        """
-        Retrieves a page by number from this PDF file.  Returns a PageObject
-        instance.
-
-        Stability: Added in v1.0, will exist for all v1.x releases.
-        """
         # ensure that we're not trying to access an encrypted PDF
         assert not self.trailer.has_key("/Encrypt")
         if self.flattenedPages == None:
             self._flatten()
         return self.flattenedPages[pageNumber]
 
+    ##
+    # Read-only property that emulates a list based upon the {@link
+    # #PdfFileReader.getNumPages getNumPages} and {@link #PdfFileReader.getPage
+    # getPage} functions.
+    # <p>
+    # Stability: Added in v1.7, and will exist for all future v1.x releases.
     pages = property(lambda self: ConvertFunctionsToVirtualList(self.getNumPages, self.getPage),
-            None, None, """Returns a sequence of pages.  This property was
-            added in v1.7 and will exist for all future v1.x releases.""")
+            None, None)
 
     def _flatten(self, pages = None, inherit = None):
         inheritablePageAttributes = (
@@ -512,38 +527,39 @@ def setRectangle(self, name, value):
 def deleteRectangle(self, name):
     del self[name]
 
-def addRectangleAccessor(klass, propname, name, fallback, docs):
-    setattr(klass, propname,
+def createRectangleAccessor(name, fallback):
+    return \
         property(
             lambda self: getRectangle(self, name, fallback),
             lambda self, value: setRectangle(self, name, value),
-            lambda self: deleteRectangle(self, name),
-            docs
+            lambda self: deleteRectangle(self, name)
             )
-        )
 
+##
+# This class represents a single page within a PDF file.  Typically this object
+# will be created by accessing the {@link #PdfFileReader.getPage getPage}
+# function of the {@link #PdfFileReader PdfFileReader} class.
 class PageObject(DictionaryObject):
     def __init__(self, pdf):
         DictionaryObject.__init__(self)
         self.pdf = pdf
 
+    ##
+    # Rotates a page clockwise by increments of 90 degrees.
+    # <p>
+    # Stability: Added in v1.1, will exist for all future v1.x releases.
+    # @param angle Angle to rotate the page.  Must be an increment of 90 deg.
     def rotateClockwise(self, angle):
-        """
-        Rotates a page clockwise by increments of 90 degrees.
-
-        Stability: Added in v1.1, will exist for all v1.x releases thereafter.
-        """
         assert angle % 90 == 0
         self._rotate(angle)
         return self
 
+    ##
+    # Rotates a page counter-clockwise by increments of 90 degrees.
+    # <p>
+    # Stability: Added in v1.1, will exist for all future v1.x releases.
+    # @param angle Angle to rotate the page.  Must be an increment of 90 deg.
     def rotateCounterClockwise(self, angle):
-        """
-        Rotates a page counter-clockwise by increments of 90 degrees.  Note
-        that this is equivilant to calling rotateClockwise(-angle).
-
-        Stability: Added in v1.1, will exist for all v1.x releases thereafter.
-        """
         assert angle % 90 == 0
         self._rotate(-angle)
         return self
@@ -589,14 +605,17 @@ class PageObject(DictionaryObject):
         return stream
     _pushPopGS = staticmethod(_pushPopGS)
 
+    ##
+    # Merges the content streams of two pages into one.  Resource references
+    # (i.e. fonts) are maintained from both pages.  The mediabox/cropbox/etc
+    # of this page are not altered.  The parameter page's content stream will
+    # be added to the end of this page's content stream, meaning that it will
+    # be drawn after, or "on top" of this page.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future 1.x releases.
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged
+    #              into this one.
     def mergePage(self, page2):
-        """
-        Merges the content streams of two pages into one.  Resource
-        references (i.e. fonts) are maintained from both pages.  The
-        mediabox/cropbox/etc on "self" are not altered.
-
-        Stability: Added in v1.4, will exist for all v1.x releases thereafter.
-        """
 
         # First we work on merging the resource dictionaries.  This allows us
         # to find out what symbols in the content streams we might need to
@@ -633,32 +652,31 @@ class PageObject(DictionaryObject):
         self[NameObject('/Contents')] = ContentStream(newContentArray, self.pdf)
         self[NameObject('/Resources')] = newResources
 
+    ##
+    # Compresses the size of this page by joining all content streams and
+    # applying a FlateDecode filter.
+    # <p>
+    # Stability: Added in v1.6, will exist for all future v1.x releases.
+    # However, it is possible that this function will perform no action if
+    # content stream compression becomes "automatic" for some reason.
     def compressContentStreams(self):
-        """
-        Join all content streams and apply a FlateDecode filter to decrease
-        the stream's size.
-
-        Stability: Added in v1.6, will exist for all v1.x releases thereafter.
-        However, if content stream compression is ever handled in a different
-        and/or more transparent way, this function may not do anything.
-        """
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
             content = ContentStream(content, self.pdf)
         self[NameObject("/Contents")] = content.flateEncode()
 
+    ##
+    # Locate all text drawing commands, in the order they are provided in the
+    # content stream, and extract the text.  This works well for some PDF
+    # files, but poorly for others, depending on the generator used.  This will
+    # be refined in the future.  Do not rely on the order of text coming out of
+    # this function, as it will change if this function is made more
+    # sophisticated.
+    # <p>
+    # Stability: Added in v1.7, will exist for all future v1.x releases.  May
+    # be overhauled to provide more ordered text in the future.
+    # @return a string object
     def extractText(self):
-        """
-        Locate all text drawing commands, in the order they are provided in
-        the content stream, and extract the text.  This works well for some
-        PDF files, but poorly for others, depending on the generator used.
-        This will be refined in the future.  Do not rely on the order of text
-        coming out of this function, as it will change if this function is 
-        made more sophisticated.
-
-        Stability: Added in v1.7, will exist for all v1.x releases thereafter.
-        May be overhauled to provide more ordered text in the future.
-        """
         text = ""
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
@@ -680,42 +698,46 @@ class PageObject(DictionaryObject):
                         text += i
         return text
 
-addRectangleAccessor(PageObject, "mediaBox", "/MediaBox", (),
-        """A rectangle, expressed in default user space units, defining the
-        boundaries of the physical medium on which the page is intended to be
-        displayed or printed.
+    ##
+    # A rectangle (RectangleObject), expressed in default user space units,
+    # defining the boundaries of the physical medium on which the page is
+    # intended to be displayed or printed.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future v1.x releases.
+    mediaBox = createRectangleAccessor("/MediaBox", ())
 
-        Stability: Added in v1.4, will exist for all v1.x releases
-        thereafter.""")
-addRectangleAccessor(PageObject, "cropBox", "/CropBox", ("/MediaBox",),
-        """A rectangle, expressed in default user space units, defining the
-        visible region of default user space.  When the page is displayed or
-        printed, its contents are to be clipped (cropped) to this rectangle and
-        then imposed on the output medium in some implementation-defined
-        manner.  Default value: same as MediaBox.
+    ##
+    # A rectangle (RectangleObject), expressed in default user space units,
+    # defining the visible region of default user space.  When the page is
+    # displayed or printed, its contents are to be clipped (cropped) to this
+    # rectangle and then imposed on the output medium in some
+    # implementation-defined manner.  Default value: same as MediaBox.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future v1.x releases.
+    cropBox = createRectangleAccessor("/CropBox", ("/CropBox",))
 
-        Stability: Added in v1.4, will exist for all v1.x releases
-        thereafter.""")
-addRectangleAccessor(PageObject, "bleedBox", "/BleedBox", ("/CropBox",
-        "/MediaBox"), """A rectangle, expressed in default user space units,
-        defining the region to which the contents of the page should be clipped
-        when output in a production environment.
-        
-        Stability: Added in v1.4, will exist for all v1.x releases
-        thereafter.""")
-addRectangleAccessor(PageObject, "trimBox", "/TrimBox", ("/CropBox",
-        "/MediaBox"), """A rectangle, expressed in default user space units,
-        defining the intended dimensions of the finished page after trimming.
-        
-        Stability: Added in v1.4, will exist for all v1.x releases
-        thereafter.""")
-addRectangleAccessor(PageObject, "artBox", "/ArtBox", ("/CropBox",
-        "/MediaBox"), """A rectangle, expressed in default user space units,
-        defining the extent of the page's meaningful content as intended by the
-        page's creator.
-        
-        Stability: Added in v1.4, will exist for all v1.x releases
-        thereafter.""")
+    ##
+    # A rectangle (RectangleObject), expressed in default user space units,
+    # defining the region to which the contents of the page should be clipped
+    # when output in a production enviroment.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future v1.x releases.
+    bleedBox = createRectangleAccessor("/BleedBox", ("/CropBox", "/MediaBox"))
+
+    ##
+    # A rectangle (RectangleObject), expressed in default user space units,
+    # defining the intended dimensions of the finished page after trimming.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future v1.x releases.
+    trimBox = createRectangleAccessor("/TrimBox", ("/CropBox", "/MediaBox"))
+
+    ##
+    # A rectangle (RectangleObject), expressed in default user space units,
+    # defining the extent of the page's meaningful content as intended by the
+    # page's creator.
+    # <p>
+    # Stability: Added in v1.4, will exist for all future v1.x releases.
+    artBox = createRectangleAccessor("/ArtBox", ("/CropBox", "/MediaBox"))
 
 
 class ContentStream(DecodedStreamObject):
@@ -816,42 +838,45 @@ class ContentStream(DecodedStreamObject):
     _data = property(_getData, _setData)
 
 
+##
+# A class representing the basic document metadata provided in a PDF File.
 class DocumentInformation(DictionaryObject):
     def __init__(self):
         DictionaryObject.__init__(self)
 
-    title = property(
-            lambda self: self.get("/Title", None),
-            None, None,
-            """The document's title, or None if not specified.  Added to pyPdf
-            in v1.6, will exist for all v1.x.""")
+    ##
+    # Read-only property accessing the document's title.  Added in v1.6, will
+    # exist for all future v1.x releases.
+    # @return A string, or None if the title is not provided.
+    title = property(lambda self: self.get("/Title", None), None, None)
 
-    author = property(
-            lambda self: self.get("/Author", None),
-            None, None,
-            """The name of the person who created the document, or None if not
-            specified.  Added to pyPdf in v1.6, will exist for all v1.x.""")
+    ##
+    # Read-only property accessing the document's author.  Added in v1.6, will
+    # exist for all future v1.x releases.
+    # @return A string, or None if the author is not provided.
+    author = property(lambda self: self.get("/Author", None), None, None)
 
-    subject = property(
-            lambda self: self.get("/Subject", None),
-            None, None,
-            """The subject of the document, or None if not specified.  Added to
-            pyPdf in v1.6, will exist for all v1.x.""")
+    ##
+    # Read-only property accessing the subject of the document.  Added in v1.6,
+    # will exist for all future v1.x releases.
+    # @return A string, or None if the subject is not provided.
+    subject = property(lambda self: self.get("/Subject", None), None, None)
 
-    creator = property(
-            lambda self: self.get("/Creator", None),
-            None, None,
-            """If the document was converted to PDF from another format, the
-            name of the application (for example, OpenOffice) that created the
-            original document from which it was converted, or None if not
-            specified.  Added to pyPdf in v1.6, will exist for all v1.x.""")
+    ##
+    # Read-only property accessing the document's creator.  If the document was
+    # converted to PDF from another format, the name of the application (for
+    # example, OpenOffice) that created the original document from which it was
+    # converted.  Added in v1.6, will exist for all future v1.x releases.
+    # @return A string, or None if the creator is not provided.
+    creator = property(lambda self: self.get("/Creator", None), None, None)
 
-    producer = property(
-            lambda self: self.get("/Producer", None),
-            None, None,
-            """If the document was converted to PDF from another format, the
-            name of the application (for example, OSX Quartz) that converted it
-            to PDF.  Added to pyPdf in v1.6, will exist for all v1.x.""")
+    ##
+    # Read-only property accessing the document's producer.  If the document
+    # was converted to PDF from another format, the name of the application
+    # (for example, OSX Quartz) that converted it to PDF.  Added in v1.6, will
+    # exist for all future v1.x releases.
+    # @return A string, or None if the producer is not provided.
+    producer = property(lambda self: self.get("/Producer", None), None, None)
 
 
 def convertToInt(d, size):
@@ -868,24 +893,24 @@ def convertToInt(d, size):
         assert False
 
 
-if __name__ == "__main__":
-    output = PdfFileWriter()
-
-    input1 = PdfFileReader(file("test\\5000-s1-05e.pdf", "rb"))
-    page1 = input1.getPage(0)
-
-    input2 = PdfFileReader(file("test\\PDFReference16.pdf", "rb"))
-    page2 = input2.getPage(0)
-    page3 = input2.getPage(1)
-    page1.mergePage(page2)
-    page1.mergePage(page3)
-
-    input3 = PdfFileReader(file("test\\cc-cc.pdf", "rb"))
-    page1.mergePage(input3.getPage(0))
-
-    page1.compressContentStreams()
-
-    output.addPage(page1)
-    output.write(file("test\\merge-test.pdf", "wb"))
+#if __name__ == "__main__":
+#    output = PdfFileWriter()
+#
+#    input1 = PdfFileReader(file("test\\5000-s1-05e.pdf", "rb"))
+#    page1 = input1.getPage(0)
+#
+#    input2 = PdfFileReader(file("test\\PDFReference16.pdf", "rb"))
+#    page2 = input2.getPage(0)
+#    page3 = input2.getPage(1)
+#    page1.mergePage(page2)
+#    page1.mergePage(page3)
+#
+#    input3 = PdfFileReader(file("test\\cc-cc.pdf", "rb"))
+#    page1.mergePage(input3.getPage(0))
+#
+#    page1.compressContentStreams()
+#
+#    output.addPage(page1)
+#    output.write(file("test\\merge-test.pdf", "wb"))
 
 
