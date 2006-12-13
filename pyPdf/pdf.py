@@ -531,11 +531,11 @@ class PdfFileReader(object):
         #if rev >= 3:
         #    if document metadata is not being encrypted, pass \xff\xff\xff\xff into hash
         md5_hash = m.digest()
-        if rev >= 3:
-            for i in range(50):
-                m = md5.new()
-                m.update(md5_hash[:keylen])
-                md5_hash = m.digest()
+        #if rev >= 3:
+        #    for i in range(50):
+        #        m = md5.new()
+        #        m.update(md5_hash[:keylen])
+        #        md5_hash = m.digest()
         return md5_hash[:keylen]
 
     def _alg34(self, password):
@@ -546,12 +546,40 @@ class PdfFileReader(object):
         U = utils.RC4_encrypt(key, self._encryption_padding)
         return U
 
+    def _alg33_1(self, password):
+        import md5
+        m = md5.new()
+        password = (password + self._encryption_padding)[:32]
+        m.update(password)
+        # alg 3.3 step 3 goes here, but isn't here yet
+        md5_hash = m.digest()
+        key = md5_hash[:5]
+        return key
+
     ##
     # Decrypt file.
     def decrypt(self, password):
+        user_password = self._authenticateUserPassword(password)
+        if user_password:
+            print "User password accepted"
+        else:
+            key = self._alg33_1(password)
+            # rev 2 only
+            encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+            real_O = self.safeGetObject(encrypt["/O"])
+            userpass = utils.RC4_encrypt(key, real_O)
+            owner_password = self._authenticateUserPassword(userpass)
+            if owner_password:
+                print "Owner password accepted"
+            else:
+                print "Password auth failed."
+
+    def _authenticateUserPassword(self, password):
+        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        real_U = self.safeGetObject(encrypt['/U'])
         U = self._alg34(password)
-        print "calc U: %r" % U
-        print "file U: %r" % self.safeGetObject(self.trailer['/Encrypt'])['/U']
+        return U == real_U
+
 
 def getRectangle(self, name, defaults):
     retval = self.get(name)
