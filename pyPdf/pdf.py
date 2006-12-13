@@ -214,6 +214,7 @@ class PdfFileReader(object):
         self.resolvedObjects = {}
         self.read(stream)
         self.stream = stream
+        self._override_encryption = False
 
     ##
     # Retrieves the PDF file's document information dictionary, if it exists.
@@ -345,8 +346,8 @@ class PdfFileReader(object):
         assert generation == indirectReference.generation
         retval = readObject(self.stream, self)
 
-        # if retval is a stream or string, it might be encrypted:
-        if isinstance(retval, StringObject) or isinstance(retval, StreamObject):
+        # override encryption is used for the /Encrypt dictionary
+        if not self._override_encryption:
             # if we don't have the encryption key:
             if self.isEncrypted and not hasattr(self, '_decryption_key'):
                 raise Exception, "file has not been decrypted"
@@ -358,13 +359,28 @@ class PdfFileReader(object):
             assert len(key) == (len(self._decryption_key) + 5)
             md5_hash = md5.new(key).digest()
             key = md5_hash[:min(16, len(self._decryption_key) + 5)]
-            if isinstance(retval, StringObject):
-                retval = StringObject(utils.RC4_encrypt(key, retval))
-            elif isinstance(retval, StreamObject):
-                retval._data = utils.RC4_encrypt(key, retval._data)
+            #print repr(indirectReference)
+            retval = self._decryptObject(retval, key)
 
         self.cacheIndirectObject(generation, idnum, retval)
         return retval
+
+    def _decryptObject(self, obj, key):
+        if isinstance(obj, StringObject):
+            #print len(obj), obj.encode("hex_codec")
+            obj = StringObject(utils.RC4_encrypt(key, obj))
+            #print len(obj), repr(obj)
+        elif isinstance(obj, StreamObject):
+            obj._data = utils.RC4_encrypt(key, obj._data)
+        elif isinstance(obj, DictionaryObject):
+            for key, value in obj.items():
+                #if key == '/Author' or key == '/Producer':
+                #    print repr(key), repr(value), repr(utils.RC4_encrypt(key, value))
+                obj[key] = self._decryptObject(value, key)
+        elif isinstance(obj, ArrayObject):
+            for i in range(len(obj)):
+                obj[i] = self._decryptObject(obj[i], key)
+        return obj
 
     def readObjectHeader(self, stream):
         idnum = readUntilWhitespace(stream)
@@ -617,6 +633,13 @@ class PdfFileReader(object):
     # @exception NotImplementedError Document uses an unsupported encryption
     # method.
     def decrypt(self, password):
+        self._override_encryption = True
+        try:
+            return self._decrypt(password)
+        finally:
+            self._override_encryption = False
+
+    def _decrypt(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
         if encrypt['/Filter'] != '/Standard':
             raise NotImplementedError, "only Standard PDF encryption handler is available"
