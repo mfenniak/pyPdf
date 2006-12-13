@@ -43,6 +43,7 @@ except ImportError:
     from StringIO import StringIO
 
 import filters
+import utils
 from generic import *
 from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
 from sets import ImmutableSet
@@ -306,6 +307,11 @@ class PdfFileReader(object):
             pageObj.update(pages)
             self.flattenedPages.append(pageObj)
 
+    def safeGetObject(self, obj):
+        if isinstance(obj, IndirectObject):
+            return self.safeGetObject(self.getObject(obj))
+        return obj
+
     def getObject(self, indirectReference):
         retval = self.resolvedObjects.get(indirectReference.generation, {}).get(indirectReference.idnum, None)
         if retval != None:
@@ -503,6 +509,49 @@ class PdfFileReader(object):
                 line = x + line
         return line
 
+    # ref: pdf1.8 spec section 3.5.2 algorithm 3.2
+    _encryption_padding = '\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56' + \
+            '\xff\xfa\x01\x08\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c' + \
+            '\xa9\xfe\x64\x53\x69\x7a'
+
+    def _alg32(self, password, rev, keylen):
+        import md5, struct
+        m = md5.new()
+        password = (password + self._encryption_padding)[:32]
+        m.update(password)
+        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        owner_entry = self.safeGetObject(encrypt['/O'])
+        m.update(owner_entry)
+        p_entry = self.safeGetObject(encrypt['/P'])
+        p_entry = struct.pack('<i', p_entry)
+        m.update(p_entry)
+        id_entry = self.safeGetObject(self.trailer['/ID'])
+        id1_entry = self.safeGetObject(id_entry[0])
+        m.update(id1_entry)
+        #if rev >= 3:
+        #    if document metadata is not being encrypted, pass \xff\xff\xff\xff into hash
+        md5_hash = m.digest()
+        if rev >= 3:
+            for i in range(50):
+                m = md5.new()
+                m.update(md5_hash[:keylen])
+                md5_hash = m.digest()
+        return md5_hash[:keylen]
+
+    def _alg34(self, password):
+        rev = self.safeGetObject(self.safeGetObject(self.trailer['/Encrypt'])['/R'])
+        if rev == 2:
+            keylen = 5
+        key = self._alg32(password, rev, keylen)
+        U = utils.RC4_encrypt(key, self._encryption_padding)
+        return U
+
+    ##
+    # Decrypt file.
+    def decrypt(self, password):
+        U = self._alg34(password)
+        print "calc U: %r" % U
+        print "file U: %r" % self.safeGetObject(self.trailer['/Encrypt'])['/U']
 
 def getRectangle(self, name, defaults):
     retval = self.get(name)

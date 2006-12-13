@@ -70,4 +70,25 @@ class ConvertFunctionsToVirtualList(object):
             raise IndexError, "sequence index out of range"
         return self.getFunction(index)
 
+def RC4_encrypt(key, plaintext):
+    S = [i for i in range(256)]
+    j = 0
+    for i in range(256):
+        j = (j + S[i] + ord(key[i % len(key)])) % 256
+        S[i], S[j] = S[j], S[i]
+    i, j = 0, 0
+    retval = ""
+    for x in range(len(plaintext)):
+        i = (i + 1) % 256
+        j = (j + S[i]) % 256
+        S[i], S[j] = S[j], S[i]
+        t = S[(S[i] + S[j]) % 256]
+        retval += chr(ord(plaintext[x]) ^ t)
+    return retval
 
+if __name__ == "__main__":
+    # test RC4
+    out = RC4_encrypt("Key", "Plaintext")
+    print repr(out)
+    pt = RC4_encrypt("Key", out)
+    print repr(pt)

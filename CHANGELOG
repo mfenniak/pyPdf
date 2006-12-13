@@ -1,3 +1,11 @@
+Version 1.8, YYYY-MM-DD
+-----------------------
+
+ - Add new pythondoc documentation.
+
+ - Fix bug in ASCII85 decode that occurs when whitespace exists inside the
+   two terminating characters of the stream.
+
 Version 1.7, 2006-12-10
 -----------------------
 
