@@ -514,7 +514,7 @@ class PdfFileReader(object):
             '\xff\xfa\x01\x08\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c' + \
             '\xa9\xfe\x64\x53\x69\x7a'
 
-    def _alg32(self, password, rev, keylen):
+    def _alg32(self, password, rev, keylen, metadata_encrypt=True):
         import md5, struct
         m = md5.new()
         password = (password + self._encryption_padding)[:32]
@@ -528,21 +528,16 @@ class PdfFileReader(object):
         id_entry = self.safeGetObject(self.trailer['/ID'])
         id1_entry = self.safeGetObject(id_entry[0])
         m.update(id1_entry)
-        #if rev >= 3:
-        #    if document metadata is not being encrypted, pass \xff\xff\xff\xff into hash
+        if rev >= 3 and not metadata_encrypt:
+            m.update("\xff\xff\xff\xff")
         md5_hash = m.digest()
-        #if rev >= 3:
-        #    for i in range(50):
-        #        m = md5.new()
-        #        m.update(md5_hash[:keylen])
-        #        md5_hash = m.digest()
+        if rev >= 3:
+            for i in range(50):
+                md5_hash = md5.new(md5_hash[:keylen]).digest()
         return md5_hash[:keylen]
 
     def _alg34(self, password):
-        rev = self.safeGetObject(self.safeGetObject(self.trailer['/Encrypt'])['/R'])
-        if rev == 2:
-            keylen = 5
-        key = self._alg32(password, rev, keylen)
+        key = self._alg32(password, 2, 5)
         U = utils.RC4_encrypt(key, self._encryption_padding)
         return U
 
@@ -555,6 +550,23 @@ class PdfFileReader(object):
         md5_hash = m.digest()
         key = md5_hash[:5]
         return key
+
+    def _alg35(self, password, rev, keylen, metadata_encrypt):
+        import md5
+        m = md5.new()
+        m.update(self._encryption_padding)
+        id_entry = self.safeGetObject(self.trailer['/ID'])
+        id1_entry = self.safeGetObject(id_entry[0])
+        m.update(id1_entry)
+        md5_hash = m.digest()
+        key = self._alg32(password, rev, keylen)
+        val = utils.RC4_encrypt(key, md5_hash)
+        for i in range(1, 20):
+            new_key = ''
+            for l in range(len(key)):
+                new_key += chr(ord(key[l]) ^ i)
+            val = utils.RC4_encrypt(new_key, val)
+        return val + ('\x00' * 16)
 
     ##
     # Decrypt file.
@@ -576,8 +588,13 @@ class PdfFileReader(object):
 
     def _authenticateUserPassword(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        rev = self.safeGetObject(encrypt['/R'])
+        if rev == 2:
+            U = self._alg34(password)
+        elif rev >= 3:
+            U = self._alg35(password, rev, self.safeGetObject(encrypt["/Length"]) / 8,
+                    self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
         real_U = self.safeGetObject(encrypt['/U'])
-        U = self._alg34(password)
         return U == real_U
 
 
