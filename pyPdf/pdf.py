@@ -262,8 +262,8 @@ class PdfFileReader(object):
     # Stability: Added in v1.0, will exist for all v1.x releases.
     # @return Returns a {@link #PageObject PageObject} instance.
     def getPage(self, pageNumber):
-        # ensure that we're not trying to access an encrypted PDF
-        assert not self.trailer.has_key("/Encrypt")
+        ## ensure that we're not trying to access an encrypted PDF
+        #assert not self.trailer.has_key("/Encrypt")
         if self.flattenedPages == None:
             self._flatten()
         return self.flattenedPages[pageNumber]
@@ -344,6 +344,25 @@ class PdfFileReader(object):
         assert idnum == indirectReference.idnum
         assert generation == indirectReference.generation
         retval = readObject(self.stream, self)
+
+        # if retval is a stream or string, it might be encrypted:
+        if isinstance(retval, StringObject) or isinstance(retval, StreamObject):
+            # if we don't have the encryption key:
+            if self.isEncrypted and not hasattr(self, '_decryption_key'):
+                raise Exception, "file has not been decrypted"
+            # otherwise, decrypt here...
+            import struct, md5
+            pack1 = struct.pack("<i", indirectReference.idnum)[:3]
+            pack2 = struct.pack("<i", indirectReference.generation)[:2]
+            key = self._decryption_key + pack1 + pack2
+            assert len(key) == (len(self._decryption_key) + 5)
+            md5_hash = md5.new(key).digest()
+            key = md5_hash[:min(16, len(self._decryption_key) + 5)]
+            if isinstance(retval, StringObject):
+                retval = StringObject(utils.RC4_encrypt(key, retval))
+            elif isinstance(retval, StreamObject):
+                retval._data = utils.RC4_encrypt(key, retval._data)
+
         self.cacheIndirectObject(generation, idnum, retval)
         return retval
 
@@ -539,7 +558,7 @@ class PdfFileReader(object):
     def _alg34(self, password):
         key = self._alg32(password, 2, 5)
         U = utils.RC4_encrypt(key, self._encryption_padding)
-        return U
+        return U, key
 
     def _alg33_1(self, password, rev, keylen):
         import md5
@@ -568,16 +587,46 @@ class PdfFileReader(object):
             for l in range(len(key)):
                 new_key += chr(ord(key[l]) ^ i)
             val = utils.RC4_encrypt(new_key, val)
-        return val + ('\x00' * 16)
+        return val + ('\x00' * 16), key
+
+    def _authenticateUserPassword(self, password):
+        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        rev = self.safeGetObject(encrypt['/R'])
+        if rev == 2:
+            U, key = self._alg34(password)
+        elif rev >= 3:
+            U, key = self._alg35(password, rev, self.safeGetObject(encrypt["/Length"]) / 8,
+                    self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
+        real_U = self.safeGetObject(encrypt['/U'])
+        return U == real_U, key
 
     ##
-    # Decrypt file.
+    # When using an encrypted / secured PDF file with the PDF Standard
+    # encryption handler, this function will allow the file to be decrypted.
+    # It checks the given password against the document's user password and
+    # owner password, and then stores the resulting decryption key if either
+    # password is correct.
+    # <p>
+    # It does not matter which password was matched.  Both passwords provide
+    # the correct decryption key that will allow the document to be used with
+    # this library.
+    #
+    # @return 0 if the password failed, 1 if the password matched the user
+    # password, and 2 if the password matched the owner password.
+    #
+    # @exception NotImplementedError Document uses an unsupported encryption
+    # method.
     def decrypt(self, password):
-        user_password = self._authenticateUserPassword(password)
+        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        if encrypt['/Filter'] != '/Standard':
+            raise NotImplementedError, "only Standard PDF encryption handler is available"
+        if not (encrypt['/V'] in (1, 2)):
+            raise NotImplementedError, "only algorithm code 1 and 2 are supported"
+        user_password, key = self._authenticateUserPassword(password)
         if user_password:
-            print "User password accepted"
+            self._decryption_key = key
+            return 1
         else:
-            encrypt = self.safeGetObject(self.trailer['/Encrypt'])
             rev = self.safeGetObject(encrypt['/R'])
             if rev == 2:
                 keylen = 5
@@ -595,22 +644,20 @@ class PdfFileReader(object):
                         new_key += chr(ord(key[l]) ^ i)
                     val = utils.RC4_encrypt(new_key, val)
                 userpass = val
-            owner_password = self._authenticateUserPassword(userpass)
+            owner_password, key = self._authenticateUserPassword(userpass)
             if owner_password:
-                print "Owner password accepted"
-            else:
-                print "Password auth failed."
+                self._decryption_key = key
+                return 2
+        return 0
 
-    def _authenticateUserPassword(self, password):
-        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
-        rev = self.safeGetObject(encrypt['/R'])
-        if rev == 2:
-            U = self._alg34(password)
-        elif rev >= 3:
-            U = self._alg35(password, rev, self.safeGetObject(encrypt["/Length"]) / 8,
-                    self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U'])
-        return U == real_U
+    def getIsEncrypted(self):
+        return self.trailer.has_key("/Encrypt")
+
+    ##
+    # Read-only boolean property showing whether this PDF file is encrypted.
+    # Note that this property, if true, will remain true even after the {@link
+    # #PdfFileReader.decrypt decrypt} function is called.
+    isEncrypted = property(lambda self: self.getIsEncrypted(), None, None)
 
 
 def getRectangle(self, name, defaults):
