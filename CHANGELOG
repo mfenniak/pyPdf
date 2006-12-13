@@ -1,6 +1,9 @@
 Version 1.8, YYYY-MM-DD
 -----------------------
 
+ - Add support for standard PDF security handler.  This allows for
+   decrypting PDF files given the proper user or owner password.
+
  - Add new pythondoc documentation.
 
  - Fix bug in ASCII85 decode that occurs when whitespace exists inside the
