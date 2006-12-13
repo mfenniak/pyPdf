@@ -541,14 +541,16 @@ class PdfFileReader(object):
         U = utils.RC4_encrypt(key, self._encryption_padding)
         return U
 
-    def _alg33_1(self, password):
+    def _alg33_1(self, password, rev, keylen):
         import md5
         m = md5.new()
         password = (password + self._encryption_padding)[:32]
         m.update(password)
-        # alg 3.3 step 3 goes here, but isn't here yet
         md5_hash = m.digest()
-        key = md5_hash[:5]
+        if rev >= 3:
+            for i in range(50):
+                md5_hash = md5.new(md5_hash).digest()
+        key = md5_hash[:keylen]
         return key
 
     def _alg35(self, password, rev, keylen, metadata_encrypt):
@@ -575,11 +577,24 @@ class PdfFileReader(object):
         if user_password:
             print "User password accepted"
         else:
-            key = self._alg33_1(password)
-            # rev 2 only
             encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+            rev = self.safeGetObject(encrypt['/R'])
+            if rev == 2:
+                keylen = 5
+            else:
+                keylen = self.safeGetObject(encrypt['/Length']) / 8
+            key = self._alg33_1(password, rev, keylen)
             real_O = self.safeGetObject(encrypt["/O"])
-            userpass = utils.RC4_encrypt(key, real_O)
+            if rev == 2:
+                userpass = utils.RC4_encrypt(key, real_O)
+            else:
+                val = real_O
+                for i in range(19, -1, -1):
+                    new_key = ''
+                    for l in range(len(key)):
+                        new_key += chr(ord(key[l]) ^ i)
+                    val = utils.RC4_encrypt(new_key, val)
+                userpass = val
             owner_password = self._authenticateUserPassword(userpass)
             if owner_password:
                 print "Owner password accepted"
