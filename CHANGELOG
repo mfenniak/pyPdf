@@ -1,8 +1,10 @@
-Version 1.8, YYYY-MM-DD
+Version 1.8, 2006-12-14
 -----------------------
 
- - Add support for standard PDF security handler.  This allows for
-   decrypting PDF files given the proper user or owner password.
+ - Add support for decryption with the standard PDF security handler.  This
+   allows for decrypting PDF files given the proper user or owner password.
+
+ - Add support for encryption with the standard PDF security handler.
 
  - Add new pythondoc documentation.
 
