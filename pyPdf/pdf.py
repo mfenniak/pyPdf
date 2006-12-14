@@ -367,16 +367,12 @@ class PdfFileReader(object):
 
     def _decryptObject(self, obj, key):
         if isinstance(obj, StringObject):
-            #print len(obj), obj.encode("hex_codec")
             obj = StringObject(utils.RC4_encrypt(key, obj))
-            #print len(obj), repr(obj)
         elif isinstance(obj, StreamObject):
             obj._data = utils.RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
-            for key, value in obj.items():
-                #if key == '/Author' or key == '/Producer':
-                #    print repr(key), repr(value), repr(utils.RC4_encrypt(key, value))
-                obj[key] = self._decryptObject(value, key)
+            for dictkey, value in obj.items():
+                obj[dictkey] = self._decryptObject(value, key)
         elif isinstance(obj, ArrayObject):
             for i in range(len(obj)):
                 obj[i] = self._decryptObject(obj[i], key)
