@@ -9,7 +9,8 @@ A Pure-Python library built as a PDF toolkit.  It is capable of:
 - splitting documents page by page,
 - merging documents page by page,
 - cropping pages,
-- merging multiple pages into a single page.
+- merging multiple pages into a single page,
+- encrypting and decrypting PDF files.
 
 By being Pure-Python, it should run on any Python platform without any
 dependencies on external libraries.  It can also work entirely on StringIO
@@ -19,13 +20,13 @@ It is therefore a useful tool for websites that manage or manipulate PDFs.
 
 setup(
         name="pyPdf",
-        version="1.7",
+        version="1.8",
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",
         author_email="mfenniak@pobox.com",
         url="http://pybrary.net/pyPdf/",
-        download_url="http://pybrary.net/pyPdf/pyPdf-1.7.tar.gz",
+        download_url="http://pybrary.net/pyPdf/pyPdf-1.8.tar.gz",
         classifiers = [
             "Development Status :: 4 - Beta",
             "Intended Audience :: Developers",
