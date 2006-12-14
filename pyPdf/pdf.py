@@ -359,7 +359,6 @@ class PdfFileReader(object):
             assert len(key) == (len(self._decryption_key) + 5)
             md5_hash = md5.new(key).digest()
             key = md5_hash[:min(16, len(self._decryption_key) + 5)]
-            #print repr(indirectReference)
             retval = self._decryptObject(retval, key)
 
         self.cacheIndirectObject(generation, idnum, retval)
