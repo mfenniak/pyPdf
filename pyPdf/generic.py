@@ -35,7 +35,7 @@ __author__ = "Mathieu Fenniak"
 __author_email__ = "mfenniak@pobox.com"
 
 import re
-from utils import readNonWhitespace
+from utils import readNonWhitespace, RC4_encrypt
 import filters
 
 def readObject(stream, pdf):
@@ -103,7 +103,7 @@ class BooleanObject(PdfObject):
     def __init__(self, value):
         self.value = value
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         if self.value:
             stream.write("true")
         else:
@@ -121,11 +121,11 @@ class BooleanObject(PdfObject):
 
 
 class ArrayObject(list, PdfObject):
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write("[")
         for data in self:
             stream.write(" ")
-            data.writeToStream(stream)
+            data.writeToStream(stream, encryption_key)
         stream.write(" ]")
 
     def readFromStream(stream, pdf):
@@ -172,7 +172,7 @@ class IndirectObject(PdfObject):
     def __ne__(self, other):
         return not self.__eq__(other)
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write("%s %s R" % (self.idnum, self.generation))
 
     def readFromStream(stream, pdf):
@@ -199,7 +199,7 @@ class IndirectObject(PdfObject):
 
 
 class FloatObject(float, PdfObject):
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write(repr(self))
 
 
@@ -207,7 +207,7 @@ class NumberObject(int, PdfObject):
     def __init__(self, value):
         int.__init__(self, value)
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write(repr(self))
 
     def readFromStream(stream):
@@ -226,9 +226,12 @@ class NumberObject(int, PdfObject):
 
 
 class StringObject(str, PdfObject):
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
+        string = self
+        if encryption_key:
+            string = RC4_encrypt(encryption_key, string)
         stream.write("(")
-        for c in self:
+        for c in string:
             if not c.isalnum() and not c.isspace():
                 stream.write("\\%03o" % ord(c))
             else:
@@ -298,7 +301,7 @@ class NameObject(str, PdfObject):
     def __init__(self, data):
         str.__init__(self, data)
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write(self)
 
     def readFromStream(stream):
@@ -318,12 +321,12 @@ class DictionaryObject(dict, PdfObject):
     def __init__(self):
         pass
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write("<<\n")
         for key, value in self.items():
-            key.writeToStream(stream)
+            key.writeToStream(stream, encryption_key)
             stream.write(" ")
-            value.writeToStream(stream)
+            value.writeToStream(stream, encryption_key)
             stream.write("\n")
         stream.write(">>")
 
@@ -398,12 +401,15 @@ class StreamObject(DictionaryObject):
         self._data = None
         self.decodedSelf = None
 
-    def writeToStream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         self[NameObject("/Length")] = NumberObject(len(self._data))
-        DictionaryObject.writeToStream(self, stream)
+        DictionaryObject.writeToStream(self, stream, encryption_key)
         del self["/Length"]
         stream.write("\nstream\n")
-        stream.write(self._data)
+        data = self._data
+        if encryption_key:
+            data = RC4_encrypt(encryption_key, data)
+        stream.write(data)
         stream.write("\nendstream")
 
     def initializeFromDictionary(data):
