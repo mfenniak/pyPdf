@@ -24,7 +24,7 @@ setup(
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",
-        author_email="mfenniak@pobox.com",
+        author_email="biziqe@mathieu.fenniak.net",
         url="http://pybrary.net/pyPdf/",
         download_url="http://pybrary.net/pyPdf/pyPdf-1.9.tar.gz",
         classifiers = [
