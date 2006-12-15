@@ -1000,14 +1000,14 @@ class ContentStream(DecodedStreamObject):
             if operator == "INLINE IMAGE":
                 newdata.write("BI")
                 dicttext = StringIO()
-                operands["settings"].writeToStream(dicttext)
+                operands["settings"].writeToStream(dicttext, None)
                 newdata.write(dicttext.getvalue()[2:-2])
                 newdata.write("ID ")
                 newdata.write(operands["data"])
                 newdata.write("EI")
             else:
                 for op in operands:
-                    op.writeToStream(newdata)
+                    op.writeToStream(newdata, None)
                     newdata.write(" ")
                 newdata.write(operator)
             newdata.write("\n")
