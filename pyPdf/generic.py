@@ -90,12 +90,12 @@ class PdfObject(object):
 
 
 class NullObject(PdfObject):
-    def writeToSTream(self, stream):
+    def writeToStream(self, stream, encryption_key):
         stream.write("null")
 
     def readFromStream(stream):
         assert stream.read(4) == "null"
-        return NullObject
+        return NullObject()
     readFromStream = staticmethod(readFromStream)
 
 
