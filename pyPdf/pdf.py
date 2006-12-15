@@ -870,7 +870,7 @@ class PageObject(DictionaryObject):
             elif operator == "'":
                 text += "\n"
                 text += operands[0]
-            elif operator == "\"":
+            elif operator == '"':
                 text += "\n"
                 text += operands[2]
             elif operator == "TJ":
@@ -946,7 +946,7 @@ class ContentStream(DecodedStreamObject):
             if peek == '':
                 break
             stream.seek(-1, 1)
-            if peek.isalpha() or peek == "'" or peek == "\"":
+            if peek.isalpha() or peek == "'" or peek == '"':
                 operator = readUntilWhitespace(stream, maxchars=2)
                 if operator == "BI":
                     # begin inline image - a completely different parsing
