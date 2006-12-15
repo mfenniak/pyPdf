@@ -172,7 +172,7 @@ class PdfFileWriter(object):
             object_positions.append(stream.tell())
             stream.write(str(idnum) + " 0 obj\n")
             key = None
-            if idnum != self._encrypt.idnum and hasattr(self, "_encrypt_key"):
+            if hasattr(self, "_encrypt") and idnum != self._encrypt.idnum:
                 pack1 = struct.pack("<i", i + 1)[:3]
                 pack2 = struct.pack("<i", 0)[:2]
                 key = self._encrypt_key + pack1 + pack2
@@ -407,9 +407,9 @@ class PdfFileReader(object):
         retval = readObject(self.stream, self)
 
         # override encryption is used for the /Encrypt dictionary
-        if not self._override_encryption:
+        if not self._override_encryption and self.isEncrypted:
             # if we don't have the encryption key:
-            if self.isEncrypted and not hasattr(self, '_decryption_key'):
+            if not hasattr(self, '_decryption_key'):
                 raise Exception, "file has not been decrypted"
             # otherwise, decrypt here...
             import struct, md5
