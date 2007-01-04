@@ -456,13 +456,15 @@ class PdfFileReader(object):
         line = ''
         while not line:
             line = self.readNextEndLine(stream)
-        assert line[:5] == "%%EOF"
+        if line[:5] != "%%EOF":
+            raise utils.PdfReadError, "EOF marker not found"
 
         # find startxref entry - the location of the xref table
         line = self.readNextEndLine(stream)
         startxref = int(line)
         line = self.readNextEndLine(stream)
-        assert line[:9] == "startxref"
+        if line[:9] != "startxref":
+            raise utils.PdfReadError, "startxref not found"
 
         # read all cross reference tables and their trailers
         self.xref = {}
@@ -475,7 +477,8 @@ class PdfFileReader(object):
             if x == "x":
                 # standard cross-reference table
                 ref = stream.read(4)
-                assert ref[:3] == "ref"
+                if ref[:3] != "ref":
+                    raise utils.PdfReadError, "xref table read error"
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
                 while 1:

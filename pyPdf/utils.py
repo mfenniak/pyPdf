@@ -86,6 +86,9 @@ def RC4_encrypt(key, plaintext):
         retval += chr(ord(plaintext[x]) ^ t)
     return retval
 
+class PdfReadError(Exception):
+    pass
+
 if __name__ == "__main__":
     # test RC4
     out = RC4_encrypt("Key", "Plaintext")

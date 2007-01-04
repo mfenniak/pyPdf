@@ -37,6 +37,7 @@ __author_email__ = "mfenniak@pobox.com"
 import re
 from utils import readNonWhitespace, RC4_encrypt
 import filters
+import utils
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -94,7 +95,9 @@ class NullObject(PdfObject):
         stream.write("null")
 
     def readFromStream(stream):
-        assert stream.read(4) == "null"
+        nulltxt = stream.read(4)
+        if nulltxt != "null":
+            raise utils.PdfReadError, "error reading null object"
         return NullObject()
     readFromStream = staticmethod(readFromStream)
 
@@ -130,7 +133,9 @@ class ArrayObject(list, PdfObject):
 
     def readFromStream(stream, pdf):
         arr = ArrayObject()
-        assert stream.read(1) == "["
+        tmp = stream.read(1)
+        if tmp != "[":
+            raise utils.PdfReadError, "error reading array"
         while True:
             # skip leading whitespace
             tok = stream.read(1)
@@ -306,7 +311,8 @@ class NameObject(str, PdfObject):
 
     def readFromStream(stream):
         name = stream.read(1)
-        assert name == "/"
+        if name != "/":
+            raise utils.PdfReadError, "name read error"
         while True:
             tok = stream.read(1)
             if tok.isspace() or tok in NameObject.delimiterCharacters:
@@ -331,7 +337,9 @@ class DictionaryObject(dict, PdfObject):
         stream.write(">>")
 
     def readFromStream(stream, pdf):
-        assert stream.read(2) == "<<"
+        tmp = stream.read(2)
+        if tmp != "<<":
+            raise utils.PdfReadError, "dictionary read error"
         data = {}
         while True:
             tok = readNonWhitespace(stream)
@@ -345,7 +353,7 @@ class DictionaryObject(dict, PdfObject):
             value = readObject(stream, pdf)
             if data.has_key(key):
                 # multiple definitions of key not permitted
-                assert False
+                raise utils.PdfReadError, "multiple definitions in dictionary"
             data[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
