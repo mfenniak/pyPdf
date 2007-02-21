@@ -237,7 +237,7 @@ class StringObject(str, PdfObject):
             string = RC4_encrypt(encryption_key, string)
         stream.write("(")
         for c in string:
-            if not c.isalnum() and not c.isspace():
+            if not c.isalnum() and c != ' ':
                 stream.write("\\%03o" % ord(c))
             else:
                 stream.write(c)
