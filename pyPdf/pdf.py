@@ -356,7 +356,7 @@ class PdfFileReader(object):
             for attr in inheritablePageAttributes:
                 if pages.has_key(attr):
                     inherit[attr] = pages[attr]
-            for page in pages["/Kids"]:
+            for page in self.safeGetObject(pages["/Kids"]):
                 self._flatten(page, inherit)
         elif t == "/Page":
             for attr,value in inherit.items():
