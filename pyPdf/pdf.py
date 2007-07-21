@@ -34,7 +34,7 @@ be able to split and merge PDF files by page, and that's about all it can do.
 It may be a solid base for future PDF file work in Python.
 """
 __author__ = "Mathieu Fenniak"
-__author_email__ = "mfenniak@pobox.com"
+__author_email__ = "biziqe@mathieu.fenniak.net"
 
 import struct
 try:

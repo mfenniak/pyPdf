@@ -32,7 +32,7 @@
 Implementation of stream filters for PDF.
 """
 __author__ = "Mathieu Fenniak"
-__author_email__ = "mfenniak@pobox.com"
+__author_email__ = "biziqe@mathieu.fenniak.net"
 
 
 try:

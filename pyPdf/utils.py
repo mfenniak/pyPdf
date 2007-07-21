@@ -32,7 +32,7 @@
 Utility functions for PDF library.
 """
 __author__ = "Mathieu Fenniak"
-__author_email__ = "mfenniak@pobox.com"
+__author_email__ = "biziqe@mathieu.fenniak.net"
 
 def readUntilWhitespace(stream, maxchars=None):
     txt = ""
