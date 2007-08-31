@@ -97,7 +97,7 @@ class NullObject(PdfObject):
     def readFromStream(stream):
         nulltxt = stream.read(4)
         if nulltxt != "null":
-            raise utils.PdfReadError, "error reading null object"
+            raise utils.PdfReadError("error reading null object")
         return NullObject()
     readFromStream = staticmethod(readFromStream)
 
@@ -135,7 +135,7 @@ class ArrayObject(list, PdfObject):
         arr = ArrayObject()
         tmp = stream.read(1)
         if tmp != "[":
-            raise utils.PdfReadError, "error reading array"
+            raise utils.PdfReadError("error reading array")
         while True:
             # skip leading whitespace
             tok = stream.read(1)
@@ -312,7 +312,7 @@ class NameObject(str, PdfObject):
     def readFromStream(stream):
         name = stream.read(1)
         if name != "/":
-            raise utils.PdfReadError, "name read error"
+            raise utils.PdfReadError("name read error")
         while True:
             tok = stream.read(1)
             if tok.isspace() or tok in NameObject.delimiterCharacters:
@@ -329,7 +329,7 @@ class DictionaryObject(dict, PdfObject):
 
     def writeToStream(self, stream, encryption_key):
         stream.write("<<\n")
-        for key, value in self.items():
+        for key, value in list(self.items()):
             key.writeToStream(stream, encryption_key)
             stream.write(" ")
             value.writeToStream(stream, encryption_key)
@@ -339,7 +339,7 @@ class DictionaryObject(dict, PdfObject):
     def readFromStream(stream, pdf):
         tmp = stream.read(2)
         if tmp != "<<":
-            raise utils.PdfReadError, "dictionary read error"
+            raise utils.PdfReadError("dictionary read error")
         data = {}
         while True:
             tok = readNonWhitespace(stream)
@@ -351,9 +351,9 @@ class DictionaryObject(dict, PdfObject):
             tok = readNonWhitespace(stream)
             stream.seek(-1, 1)
             value = readObject(stream, pdf)
-            if data.has_key(key):
+            if key in data:
                 # multiple definitions of key not permitted
-                raise utils.PdfReadError, "multiple definitions in dictionary"
+                raise utils.PdfReadError("multiple definitions in dictionary")
             data[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
@@ -368,7 +368,7 @@ class DictionaryObject(dict, PdfObject):
                 # read \n after
                 stream.read(1)
             # this is a stream object, not a dictionary
-            assert data.has_key("/Length")
+            assert "/Length" in data
             length = data["/Length"]
             if isinstance(length, IndirectObject):
                 t = stream.tell()
@@ -395,7 +395,7 @@ class DictionaryObject(dict, PdfObject):
                     raise "Unable to find 'endstream' marker after stream."
         else:
             stream.seek(pos, 0)
-        if data.has_key("__streamdata__"):
+        if "__streamdata__" in data:
             return StreamObject.initializeFromDictionary(data)
         else:
             retval = DictionaryObject()
@@ -421,7 +421,7 @@ class StreamObject(DictionaryObject):
         stream.write("\nendstream")
 
     def initializeFromDictionary(data):
-        if data.has_key("/Filter"):
+        if "/Filter" in data:
             retval = EncodedStreamObject()
         else:
             retval = DecodedStreamObject()
@@ -433,7 +433,7 @@ class StreamObject(DictionaryObject):
     initializeFromDictionary = staticmethod(initializeFromDictionary)
 
     def flateEncode(self):
-        if self.has_key("/Filter"):
+        if "/Filter" in self:
             f = self["/Filter"]
             if isinstance(f, ArrayObject):
                 f.insert(0, NameObject("/FlateDecode"))
@@ -470,7 +470,7 @@ class EncodedStreamObject(StreamObject):
             # create decoded object
             decoded = StreamObject()
             decoded._data = filters.decodeStreamData(self)
-            for key, value in self.items():
+            for key, value in list(self.items()):
                 if not key in ("/Length", "/Filter", "/DecodeParms"):
                     decoded[key] = value
             self.decodedSelf = decoded
