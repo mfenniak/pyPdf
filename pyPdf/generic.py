@@ -35,9 +35,8 @@ __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
 import re
-from utils import readNonWhitespace, RC4_encrypt
-import filters
-import utils
+from .utils import (readNonWhitespace, RC4_encrypt, PdfReadError)
+from .filters import (FlateDecode, decodeStreamData)
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -97,7 +96,7 @@ class NullObject(PdfObject):
     def readFromStream(stream):
         nulltxt = stream.read(4)
         if nulltxt != "null":
-            raise utils.PdfReadError("error reading null object")
+            raise PdfReadError("error reading null object")
         return NullObject()
     readFromStream = staticmethod(readFromStream)
 
@@ -135,7 +134,7 @@ class ArrayObject(list, PdfObject):
         arr = ArrayObject()
         tmp = stream.read(1)
         if tmp != "[":
-            raise utils.PdfReadError("error reading array")
+            raise PdfReadError("error reading array")
         while True:
             # skip leading whitespace
             tok = stream.read(1)
@@ -312,7 +311,7 @@ class NameObject(str, PdfObject):
     def readFromStream(stream):
         name = stream.read(1)
         if name != "/":
-            raise utils.PdfReadError("name read error")
+            raise PdfReadError("name read error")
         while True:
             tok = stream.read(1)
             if tok.isspace() or tok in NameObject.delimiterCharacters:
@@ -339,7 +338,7 @@ class DictionaryObject(dict, PdfObject):
     def readFromStream(stream, pdf):
         tmp = stream.read(2)
         if tmp != "<<":
-            raise utils.PdfReadError("dictionary read error")
+            raise PdfReadError("dictionary read error")
         data = {}
         while True:
             tok = readNonWhitespace(stream)
@@ -353,7 +352,7 @@ class DictionaryObject(dict, PdfObject):
             value = readObject(stream, pdf)
             if key in data:
                 # multiple definitions of key not permitted
-                raise utils.PdfReadError("multiple definitions in dictionary")
+                raise PdfReadError("multiple definitions in dictionary")
             data[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
@@ -446,7 +445,7 @@ class StreamObject(DictionaryObject):
             f = NameObject("/FlateDecode")
         retval = EncodedStreamObject()
         retval[NameObject("/Filter")] = f
-        retval._data = filters.FlateDecode.encode(self._data)
+        retval._data = FlateDecode.encode(self._data)
         return retval
 
 
@@ -469,7 +468,7 @@ class EncodedStreamObject(StreamObject):
         else:
             # create decoded object
             decoded = StreamObject()
-            decoded._data = filters.decodeStreamData(self)
+            decoded._data = decodeStreamData(self)
             for key, value in list(self.items()):
                 if not key in ("/Length", "/Filter", "/DecodeParms"):
                     decoded[key] = value
