@@ -453,14 +453,14 @@ class PdfFileReader(object):
         line = ''
         while not line:
             line = self.readNextEndLine(stream)
-        if line[:5] != "%%EOF":
+        if line[:5] != b"%%EOF":
             raise PdfReadError("EOF marker not found")
 
         # find startxref entry - the location of the xref table
         line = self.readNextEndLine(stream)
         startxref = int(line)
         line = self.readNextEndLine(stream)
-        if line[:9] != "startxref":
+        if line[:9] != b"startxref":
             raise PdfReadError("startxref not found")
 
         # read all cross reference tables and their trailers
@@ -471,10 +471,10 @@ class PdfFileReader(object):
             # load the xref table
             stream.seek(startxref, 0)
             x = stream.read(1)
-            if x == "x":
+            if x == b"x":
                 # standard cross-reference table
                 ref = stream.read(4)
-                if ref[:3] != "ref":
+                if ref[:3] != b"ref":
                     raise PdfReadError("xref table read error")
                 readNonWhitespace(stream)
                 stream.seek(-1, 1)
@@ -488,7 +488,7 @@ class PdfFileReader(object):
                     cnt = 0
                     while cnt < size:
                         line = stream.read(20)
-                        offset, generation = line[:16].split(" ")
+                        offset, generation = line[:16].split(b" ")
                         offset, generation = int(offset), int(generation)
                         if generation not in self.xref:
                             self.xref[generation] = {}
@@ -505,7 +505,7 @@ class PdfFileReader(object):
                     readNonWhitespace(stream)
                     stream.seek(-1, 1)
                     trailertag = stream.read(7)
-                    if trailertag != "trailer":
+                    if trailertag != b"trailer":
                         # more xrefs!
                         stream.seek(-7, 1)
                     else:
@@ -585,12 +585,12 @@ class PdfFileReader(object):
                     break
 
     def readNextEndLine(self, stream):
-        line = ""
+        line = b""
         while True:
             x = stream.read(1)
             stream.seek(-2, 1)
-            if x == '\n' or x == '\r':
-                while x == '\n' or x == '\r':
+            if x == b'\n' or x == b'\r':
+                while x == b'\n' or x == b'\r':
                     x = stream.read(1)
                     stream.seek(-2, 1)
                 stream.seek(1, 1)

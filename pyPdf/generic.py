@@ -41,39 +41,39 @@ from .filters import (FlateDecode, decodeStreamData)
 def readObject(stream, pdf):
     tok = stream.read(1)
     stream.seek(-1, 1) # reset to start
-    if tok == 't' or tok == 'f':
+    if tok == b't' or tok == b'f':
         # boolean object
         return BooleanObject.readFromStream(stream)
-    elif tok == '(':
+    elif tok == b'(':
         # string object
         return StringObject.readFromStream(stream)
-    elif tok == '/':
+    elif tok == b'/':
         # name object
         return NameObject.readFromStream(stream)
-    elif tok == '[':
+    elif tok == b'[':
         # array object
         return ArrayObject.readFromStream(stream, pdf)
-    elif tok == 'n':
+    elif tok == b'n':
         # null object
         return NullObject.readFromStream(stream)
-    elif tok == '<':
+    elif tok == b'<':
         # hexadecimal string OR dictionary
         peek = stream.read(2)
         stream.seek(-2, 1) # reset to start
-        if peek == '<<':
+        if peek == b'<<':
             return DictionaryObject.readFromStream(stream, pdf)
         else:
             return StringObject.readHexStringFromStream(stream)
-    elif tok == '%':
+    elif tok == b'%':
         # comment
-        while tok not in ('\r', '\n'):
+        while tok not in (b'\r', b'\n'):
             tok = stream.read(1)
         tok = readNonWhitespace(stream)
         stream.seek(-1, 1)
         return readObject(stream, pdf)
     else:
         # number object OR indirect reference
-        if tok == '+' or tok == '-':
+        if tok == b'+' or tok == b'-':
             # number
             return NumberObject.readFromStream(stream)
         peek = stream.read(20)
@@ -133,17 +133,17 @@ class ArrayObject(list, PdfObject):
     def readFromStream(stream, pdf):
         arr = ArrayObject()
         tmp = stream.read(1)
-        if tmp != "[":
+        if tmp != b"[":
             raise PdfReadError("error reading array")
         while True:
             # skip leading whitespace
             tok = stream.read(1)
-            while tok.isspace():
+            while tok in b" \t\n\r":
                 tok = stream.read(1)
             stream.seek(-1, 1)
             # check for array ending
             peekahead = stream.read(1)
-            if peekahead == "]":
+            if peekahead == b"]":
                 break
             stream.seek(-1, 1)
             # read and append obj
@@ -180,16 +180,16 @@ class IndirectObject(PdfObject):
         stream.write("%s %s R" % (self.idnum, self.generation))
 
     def readFromStream(stream, pdf):
-        idnum = ""
+        idnum = b""
         while True:
             tok = stream.read(1)
-            if tok.isspace():
+            if tok in b" \t\n\r":
                 break
             idnum += tok
-        generation = ""
+        generation = b""
         while True:
             tok = stream.read(1)
-            if tok.isspace():
+            if tok in b" \t\n\r":
                 break
             generation += tok
         r = stream.read(1)
@@ -197,7 +197,7 @@ class IndirectObject(PdfObject):
         #    stream.seek(-20, 1)
         #    print idnum, generation
         #    print repr(stream.read(40))
-        assert r == "R"
+        assert r == b"R"
         return IndirectObject(int(idnum), int(generation), pdf)
     readFromStream = staticmethod(readFromStream)
 
@@ -215,21 +215,21 @@ class NumberObject(int, PdfObject):
         stream.write(repr(self))
 
     def readFromStream(stream):
-        name = ""
+        name = b""
         while True:
             tok = stream.read(1)
-            if tok != '+' and tok != '-' and tok != '.' and not tok.isdigit():
+            if tok != b'+' and tok != b'-' and tok != b'.' and not tok in '0123456789':
                 stream.seek(-1, 1)
                 break
             name += tok
-        if name.find(".") != -1:
+        if name.find(b".") != -1:
             return FloatObject(name)
         else:
             return NumberObject(name)
     readFromStream = staticmethod(readFromStream)
 
 
-class StringObject(str, PdfObject):
+class StringObject(bytes, PdfObject):
     def writeToStream(self, stream, encryption_key):
         string = self
         if encryption_key:
@@ -244,20 +244,20 @@ class StringObject(str, PdfObject):
 
     def readHexStringFromStream(stream):
         stream.read(1)
-        txt = ""
-        x = ""
+        txt = b""
+        x = b""
         while True:
             tok = readNonWhitespace(stream)
-            if tok == ">":
+            if tok == b">":
                 break
             x += tok
             if len(x) == 2:
-                txt += chr(int(x, base=16))
-                x = ""
+                txt += bytes.fromhex(x)
+                x = b""
         if len(x) == 1:
-            x += "0"
+            x += b"0"
         if len(x) == 2:
-            txt += chr(int(x, base=16))
+            txt += bytes.fromhex(x)
         return StringObject(txt)
     readHexStringFromStream = staticmethod(readHexStringFromStream)
 
@@ -300,7 +300,7 @@ class StringObject(str, PdfObject):
 
 
 class NameObject(str, PdfObject):
-    delimiterCharacters = "(", ")", "<", ">", "[", "]", "{", "}", "/", "%"
+    delimiterCharacters = b"()<>[]{}/%"
 
     def __init__(self, data):
         str.__init__(self, data)
@@ -310,11 +310,11 @@ class NameObject(str, PdfObject):
 
     def readFromStream(stream):
         name = stream.read(1)
-        if name != "/":
+        if name != b"/":
             raise PdfReadError("name read error")
         while True:
             tok = stream.read(1)
-            if tok.isspace() or tok in NameObject.delimiterCharacters:
+            if (tok in b" \t\n\r") or (tok in NameObject.delimiterCharacters):
                 stream.seek(-1, 1)
                 break
             name += tok
@@ -337,12 +337,12 @@ class DictionaryObject(dict, PdfObject):
 
     def readFromStream(stream, pdf):
         tmp = stream.read(2)
-        if tmp != "<<":
+        if tmp != b"<<":
             raise PdfReadError("dictionary read error")
         data = {}
         while True:
             tok = readNonWhitespace(stream)
-            if tok == ">":
+            if tok == b">":
                 stream.read(1)
                 break
             stream.seek(-1, 1)
@@ -356,27 +356,27 @@ class DictionaryObject(dict, PdfObject):
             data[key] = value
         pos = stream.tell()
         s = readNonWhitespace(stream)
-        if s == 's' and stream.read(5) == 'tream':
+        if s == b's' and stream.read(5) == b'tream':
             eol = stream.read(1)
             # odd PDF file output has spaces after 'stream' keyword but before EOL.
             # patch provided by Danial Sandler
-            while eol == ' ':
+            while eol == b' ':
                 eol = stream.read(1)
-            assert eol in ("\n", "\r")
-            if eol == "\r":
+            assert eol in (b"\n", b"\r")
+            if eol == b"\r":
                 # read \n after
                 stream.read(1)
             # this is a stream object, not a dictionary
-            assert "/Length" in data
-            length = data["/Length"]
+            assert b"/Length" in data
+            length = data[b"/Length"]
             if isinstance(length, IndirectObject):
                 t = stream.tell()
                 length = pdf.getObject(length)
                 stream.seek(t, 0)
-            data["__streamdata__"] = stream.read(length)
+            data[b"__streamdata__"] = stream.read(length)
             e = readNonWhitespace(stream)
             ndstream = stream.read(8)
-            if (e + ndstream) != "endstream":
+            if (e + ndstream) != b"endstream":
                 # (sigh) - the odd PDF file has a length that is too long, so
                 # we need to read backwards to find the "endstream" ending.
                 # ReportLab (unknown version) generates files with this bug,
@@ -386,9 +386,9 @@ class DictionaryObject(dict, PdfObject):
                 pos = stream.tell()
                 stream.seek(-10, 1)
                 end = stream.read(9)
-                if end == "endstream":
+                if end == b"endstream":
                     # we found it by looking back one character further.
-                    data["__streamdata__"] = data["__streamdata__"][:-1]
+                    data[b"__streamdata__"] = data[b"__streamdata__"][:-1]
                 else:
                     stream.seek(pos, 0)
                     raise "Unable to find 'endstream' marker after stream."

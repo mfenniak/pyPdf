@@ -46,8 +46,8 @@ def readUntilWhitespace(stream, maxchars=None):
     return txt
 
 def readNonWhitespace(stream):
-    tok = ' '
-    while tok == '\n' or tok == '\r' or tok == ' ' or tok == '\t':
+    tok = b' '
+    while tok == b'\n' or tok == b'\r' or tok == b' ' or tok == b'\t':
         tok = stream.read(1)
     return tok
 
