@@ -162,7 +162,7 @@ class ASCII85Decode(object):
         x = 0
         hitEod = False
         # remove all whitespace from data
-        data = data.strip(b" \n\r\t")
+        data = bytes([y for y in data if y not in b" \n\r\t"])
         while not hitEod:
             c = data[x]
             if len(retval) == 0 and c == b"<"[0] and data[x+1] == b"~"[0]:
