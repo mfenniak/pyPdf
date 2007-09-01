@@ -967,7 +967,7 @@ class ContentStream(DecodedStreamObject):
         while True:
             tok = readNonWhitespace(stream)
             stream.seek(-1, 1)
-            if tok == "I":
+            if tok == b"I":
                 # "ID" - begin of image data
                 break
             key = readObject(stream, self.pdf)
@@ -977,13 +977,13 @@ class ContentStream(DecodedStreamObject):
             settings[key] = value
         # left at beginning of ID
         tmp = stream.read(3)
-        assert tmp[:2] == "ID"
-        data = ""
+        assert tmp[:2] == b"ID"
+        data = b""
         while True:
             tok = stream.read(1)
-            if tok == "E":
+            if tok == b"E":
                 next = stream.read(1)
-                if next == "I":
+                if next == b"I":
                     break
                 else:
                     stream.seek(-1, 1)
