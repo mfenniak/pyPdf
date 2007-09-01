@@ -118,16 +118,16 @@ class PdfFileWriter(object):
         if use_128bit:
             V = 2
             rev = 3
-            keylen = 128 / 8
+            keylen = 128 // 8
         else:
             V = 1
             rev = 2
-            keylen = 40 / 8
+            keylen = 40 // 8
         # permit everything:
         P = -1
         O = StringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
-        ID_1 = hashlib.new(repr(time.time())).digest()
-        ID_2 = hashlib.new(repr(random.random())).digest()
+        ID_1 = hashlib.md5(repr(time.time())).digest()
+        ID_2 = hashlib.md5(repr(random.random())).digest()
         self._ID = ArrayObject((StringObject(ID_1), StringObject(ID_2)))
         if rev == 2:
             U, key = _alg34(user_pwd, O, P, ID_1)
@@ -174,7 +174,7 @@ class PdfFileWriter(object):
                 pack2 = struct.pack("<i", 0)[:2]
                 key = self._encrypt_key + pack1 + pack2
                 assert len(key) == (len(self._encrypt_key) + 5)
-                md5_hash = hashlib.new(key).digest()
+                md5_hash = hashlib.md5(key).digest()
                 key = md5_hash[:min(16, len(self._encrypt_key) + 5)]
             obj.writeToStream(stream, key)
             stream.write(b"\nendobj\n")
@@ -414,7 +414,7 @@ class PdfFileReader(object):
             pack2 = struct.pack("<i", indirectReference.generation)[:2]
             key = self._decryption_key + pack1 + pack2
             assert len(key) == (len(self._decryption_key) + 5)
-            md5_hash = hashlib.new(key).digest()
+            md5_hash = hashlib.md5(key).digest()
             key = md5_hash[:min(16, len(self._decryption_key) + 5)]
             retval = self._decryptObject(retval, key)
 
@@ -639,17 +639,17 @@ class PdfFileReader(object):
             if rev == 2:
                 keylen = 5
             else:
-                keylen = self.safeGetObject(encrypt['/Length']) / 8
+                keylen = self.safeGetObject(encrypt['/Length']) // 8
             key = _alg33_1(password, rev, keylen)
-            real_O = self.safeGetObject(encrypt["/O"])
+            real_O = self.safeGetObject(encrypt["/O"]).data
             if rev == 2:
                 userpass = RC4_encrypt(key, real_O)
             else:
                 val = real_O
                 for i in range(19, -1, -1):
-                    new_key = ''
+                    new_key = b''
                     for l in range(len(key)):
-                        new_key += chr(ord(key[l]) ^ i)
+                        new_key += bytes([key[l] ^ i])
                     val = RC4_encrypt(new_key, val)
                 userpass = val
             owner_password, key = self._authenticateUserPassword(userpass)
@@ -661,15 +661,15 @@ class PdfFileReader(object):
     def _authenticateUserPassword(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
         rev = self.safeGetObject(encrypt['/R'])
-        owner_entry = self.safeGetObject(encrypt['/O'])
+        owner_entry = self.safeGetObject(encrypt['/O']).data
         p_entry = self.safeGetObject(encrypt['/P'])
         id_entry = self.safeGetObject(self.trailer['/ID'])
-        id1_entry = self.safeGetObject(id_entry[0])
+        id1_entry = self.safeGetObject(id_entry[0]).data
         if rev == 2:
             U, key = _alg34(password, owner_entry, p_entry, id1_entry)
         elif rev >= 3:
             U, key = _alg35(password, rev,
-                    self.safeGetObject(encrypt["/Length"]) / 8, owner_entry,
+                    self.safeGetObject(encrypt["/Length"]) // 8, owner_entry,
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
         real_U = self.safeGetObject(encrypt['/U'])
@@ -1074,9 +1074,9 @@ def convertToInt(d, size):
         assert False
 
 # ref: pdf1.8 spec section 3.5.2 algorithm 3.2
-_encryption_padding = '\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56' + \
-        '\xff\xfa\x01\x08\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c' + \
-        '\xa9\xfe\x64\x53\x69\x7a'
+_encryption_padding = b'\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56' + \
+        b'\xff\xfa\x01\x08\x2e\x2e\x00\xb6\xd0\x68\x3e\x80\x2f\x0c' + \
+        b'\xa9\xfe\x64\x53\x69\x7a'
 
 # Implementation of algorithm 3.2 of the PDF standard security handler,
 # section 3.5.2 of the PDF 1.6 reference.
@@ -1090,7 +1090,7 @@ def _alg32(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # 2. Initialize the MD5 hash function and pass the result of step 1 as
     # input to this function.
     import hashlib, struct
-    m = hashlib.new(password)
+    m = hashlib.md5(password)
     # 3. Pass the value of the encryption dictionary's /O entry to the MD5 hash
     # function.
     m.update(owner_entry)
@@ -1114,7 +1114,7 @@ def _alg32(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # /Length entry.
     if rev >= 3:
         for i in range(50):
-            md5_hash = hashlib.new(md5_hash[:keylen]).digest()
+            md5_hash = hashlib.md5(md5_hash[:keylen]).digest()
     # 9. Set the encryption key to the first n bytes of the output from the
     # final MD5 hash, where n is always 5 for revision 2 but, for revision 3 or
     # greater, depends on the value of the encryption dictionary's /Length
@@ -1157,13 +1157,13 @@ def _alg33_1(password, rev, keylen):
     # 2. Initialize the MD5 hash function and pass the result of step 1 as
     # input to this function.
     import hashlib
-    m = hashlib.new(password)
+    m = hashlib.md5(password)
     # 3. (Revision 3 or greater) Do the following 50 times: Take the output
     # from the previous MD5 hash and pass it as input into a new MD5 hash.
     md5_hash = m.digest()
     if rev >= 3:
         for i in range(50):
-            md5_hash = hashlib.new(md5_hash).digest()
+            md5_hash = hashlib.md5(md5_hash).digest()
     # 4. Create an RC4 encryption key using the first n bytes of the output
     # from the final MD5 hash, where n is always 5 for revision 2 but, for
     # revision 3 or greater, depends on the value of the encryption
@@ -1194,7 +1194,7 @@ def _alg35(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # 2. Initialize the MD5 hash function and pass the 32-byte padding string
     # shown in step 1 of Algorithm 3.2 as input to this function. 
     import hashlib
-    m = hashlib.new()
+    m = hashlib.md5()
     m.update(_encryption_padding)
     # 3. Pass the first element of the file's file identifier array (the value
     # of the ID entry in the document's trailer dictionary; see Table 3.13 on
@@ -1212,9 +1212,9 @@ def _alg35(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # operation between that byte and the single-byte value of the iteration
     # counter (from 1 to 19). 
     for i in range(1, 20):
-        new_key = ''
+        new_key = b''
         for l in range(len(key)):
-            new_key += chr(ord(key[l]) ^ i)
+            new_key += bytes([key[l] ^ i])
         val = RC4_encrypt(new_key, val)
     # 6. Append 16 bytes of arbitrary padding to the output from the final
     # invocation of the RC4 function and store the 32-byte result as the value
@@ -1222,7 +1222,7 @@ def _alg35(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # (implementator note: I don't know what "arbitrary padding" is supposed to
     # mean, so I have used null bytes.  This seems to match a few other
     # people's implementations)
-    return val + ('\x00' * 16), key
+    return val + bytes(16), key
 
 #if __name__ == "__main__":
 #    output = PdfFileWriter()
