@@ -126,21 +126,21 @@ class PdfFileWriter(object):
         # permit everything:
         P = -1
         O = StringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
-        ID_1 = hashlib.md5(repr(time.time())).digest()
-        ID_2 = hashlib.md5(repr(random.random())).digest()
+        ID_1 = hashlib.md5(repr(time.time()).encode("ascii")).digest()
+        ID_2 = hashlib.md5(repr(random.random()).encode("ascii")).digest()
         self._ID = ArrayObject((StringObject(ID_1), StringObject(ID_2)))
         if rev == 2:
-            U, key = _alg34(user_pwd, O, P, ID_1)
+            U, key = _alg34(user_pwd, O.data, P, ID_1)
         else:
             assert rev == 3
-            U, key = _alg35(user_pwd, rev, keylen, O, P, ID_1, False)
+            U, key = _alg35(user_pwd, rev, keylen, O.data, P, ID_1, False)
         encrypt = DictionaryObject()
         encrypt[NameObject("/Filter")] = NameObject("/Standard")
         encrypt[NameObject("/V")] = NumberObject(V)
         if V == 2:
             encrypt[NameObject("/Length")] = NumberObject(keylen * 8)
         encrypt[NameObject("/R")] = NumberObject(rev)
-        encrypt[NameObject("/O")] = StringObject(O)
+        encrypt[NameObject("/O")] = O
         encrypt[NameObject("/U")] = StringObject(U)
         encrypt[NameObject("/P")] = NumberObject(P)
         self._encrypt = self._addObject(encrypt)
@@ -423,7 +423,7 @@ class PdfFileReader(object):
 
     def _decryptObject(self, obj, key):
         if isinstance(obj, StringObject):
-            obj = StringObject(RC4_encrypt(key, obj))
+            obj = StringObject(RC4_encrypt(key, obj.data))
         elif isinstance(obj, StreamObject):
             obj._data = RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
@@ -672,7 +672,7 @@ class PdfFileReader(object):
                     self.safeGetObject(encrypt["/Length"]) // 8, owner_entry,
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U'])
+        real_U = self.safeGetObject(encrypt['/U']).data
         return U == real_U, key
 
     def getIsEncrypted(self):
@@ -1140,9 +1140,9 @@ def _alg33(owner_pwd, user_pwd, rev, keylen):
     # iteration counter (from 1 to 19).
     if rev >= 3:
         for i in range(1, 20):
-            new_key = ''
+            new_key = b''
             for l in range(len(key)):
-                new_key += chr(ord(key[l]) ^ i)
+                new_key += bytes([key[l] ^ i])
             val = RC4_encrypt(new_key, val)
     # 8. Store the output from the final invocation of the RC4 as the value of
     # the /O entry in the encryption dictionary.
