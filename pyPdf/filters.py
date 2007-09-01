@@ -162,20 +162,20 @@ class ASCII85Decode(object):
         x = 0
         hitEod = False
         # remove all whitespace from data
-        data = [y for y in data if not (y in ' \n\r\t')]
+        data = y.strip(b" \n\r\t")
         while not hitEod:
             c = data[x]
-            if len(retval) == 0 and c == "<" and data[x+1] == "~":
+            if len(retval) == 0 and c == b"<" and data[x+1] == b"~":
                 x += 2
                 continue
             #elif c.isspace():
             #    x += 1
             #    continue
-            elif c == 'z':
+            elif c == b'z':
                 assert len(group) == 0
                 retval += '\x00\x00\x00\x00'
                 continue
-            elif c == "~" and data[x+1] == ">":
+            elif c == b"~" and data[x+1] == b">":
                 if len(group) != 0:
                     # cannot have a final group of just 1 char
                     assert len(group) > 1
