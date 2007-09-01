@@ -147,7 +147,6 @@ class ArrayObject(list, PdfObject):
                 break
             stream.seek(-1, 1)
             # read and append obj
-            #pos = stream.tell(); stream.seek(-10, 1); tmp = stream.read(200); print(repr(tmp)); stream.seek(pos, 0)
             obj = readObject(stream, pdf)
             arr.append(obj)
         return arr
@@ -242,10 +241,10 @@ class StringObject(PdfObject):
             string = RC4_encrypt(encryption_key, string)
         stream.write(b"(")
         for c in string:
-            if c < 32 or c > 126:
-                stream.write(("\\%03o" % c).encode("ascii"))
-            else:
+            if (c == 32) or (65 <= c <= 90) or (97 <= c <= 122):
                 stream.write(bytes((c,)))
+            else:
+                stream.write(("\\%03o" % c).encode("ascii"))
         stream.write(b")")
 
     def readHexStringFromStream(stream):
