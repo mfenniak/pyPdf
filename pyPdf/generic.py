@@ -147,7 +147,9 @@ class ArrayObject(list, PdfObject):
                 break
             stream.seek(-1, 1)
             # read and append obj
-            arr.append(readObject(stream, pdf))
+            #pos = stream.tell(); stream.seek(-10, 1); tmp = stream.read(200); print(repr(tmp)); stream.seek(pos, 0)
+            obj = readObject(stream, pdf)
+            arr.append(obj)
         return arr
     readFromStream = staticmethod(readFromStream)
 

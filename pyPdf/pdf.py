@@ -781,8 +781,8 @@ class PageObject(DictionaryObject):
         # of a content stream.  This isolates it from changes such as 
         # transformation matricies.
         stream = ContentStream(contents, pdf)
-        stream.operations.insert(0, [[], "q"])
-        stream.operations.append([[], "Q"])
+        stream.operations.insert(0, [[], b"q"])
+        stream.operations.append([[], b"Q"])
         return stream
     _pushPopGS = staticmethod(_pushPopGS)
 
@@ -929,7 +929,7 @@ class ContentStream(DecodedStreamObject):
         # multiple StreamObjects to be cat'd together.
         stream = stream.getObject()
         if isinstance(stream, ArrayObject):
-            data = ""
+            data = b""
             for s in stream:
                 data += s.getObject().getData()
             stream = BytesIO(data)
@@ -943,17 +943,17 @@ class ContentStream(DecodedStreamObject):
         operands = []
         while True:
             peek = readNonWhitespace(stream)
-            if peek == '':
+            if peek == b'':
                 break
             stream.seek(-1, 1)
-            if peek.isalpha() or peek == "'" or peek == '"':
+            if peek in b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' or peek == b"'" or peek == b'"':
                 operator = readUntilWhitespace(stream, maxchars=2)
-                if operator == "BI":
+                if operator == b"BI":
                     # begin inline image - a completely different parsing
                     # mechanism is required, of course... thanks buddy...
                     assert operands == []
                     ii = self._readInlineImage(stream)
-                    self.operations.append((ii, "INLINE IMAGE"))
+                    self.operations.append((ii, b"INLINE IMAGE"))
                 else:
                     self.operations.append((operands, operator))
                     operands = []
@@ -997,20 +997,20 @@ class ContentStream(DecodedStreamObject):
     def _getData(self):
         newdata = BytesIO()
         for operands,operator in self.operations:
-            if operator == "INLINE IMAGE":
-                newdata.write("BI")
+            if operator == b"INLINE IMAGE":
+                newdata.write(b"BI")
                 dicttext = BytesIO()
                 operands["settings"].writeToStream(dicttext, None)
                 newdata.write(dicttext.getvalue()[2:-2])
-                newdata.write("ID ")
+                newdata.write(b"ID ")
                 newdata.write(operands["data"])
-                newdata.write("EI")
+                newdata.write(b"EI")
             else:
                 for op in operands:
                     op.writeToStream(newdata, None)
-                    newdata.write(" ")
+                    newdata.write(b" ")
                 newdata.write(operator)
-            newdata.write("\n")
+            newdata.write(b"\n")
         return newdata.getvalue()
 
     def _setData(self, value):
