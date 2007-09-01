@@ -113,9 +113,9 @@ class BooleanObject(PdfObject):
 
     def readFromStream(stream):
         word = stream.read(4)
-        if word == "true":
+        if word == b"true":
             return BooleanObject(True)
-        elif word == "fals":
+        elif word == b"fals":
             stream.read(1)
             return BooleanObject(False)
         assert False
@@ -229,9 +229,12 @@ class NumberObject(int, PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
-class StringObject(bytes, PdfObject):
+class StringObject(PdfObject):
+    def __init__(self, data):
+        self.data = data
+
     def writeToStream(self, stream, encryption_key):
-        string = self
+        string = self.data
         if encryption_key:
             string = RC4_encrypt(encryption_key, string)
         stream.write("(")
@@ -264,33 +267,33 @@ class StringObject(bytes, PdfObject):
     def readFromStream(stream):
         tok = stream.read(1)
         parens = 1
-        txt = ""
+        txt = b""
         while True:
             tok = stream.read(1)
-            if tok == "(":
+            if tok == b"(":
                 parens += 1
-            elif tok == ")":
+            elif tok == b")":
                 parens -= 1
                 if parens == 0:
                     break
-            elif tok == "\\":
+            elif tok == b"\\":
                 tok = stream.read(1)
-                if tok == "n":
-                    tok = "\n"
-                elif tok == "r":
-                    tok = "\r"
-                elif tok == "t":
+                if tok == b"n":
+                    tok = b"\n"
+                elif tok == b"r":
+                    tok = b"\r"
+                elif tok == b"t":
                     tok = "\t"
-                elif tok == "b":
-                    tok == "\b"
-                elif tok == "f":
-                    tok = "\f"
-                elif tok == "(":
-                    tok = "("
-                elif tok == ")":
-                    tok = ")"
-                elif tok == "\\":
-                    tok = "\\"
+                elif tok == b"b":
+                    tok = b"\b"
+                elif tok == b"f":
+                    tok = b"\f"
+                elif tok == b"(":
+                    tok = b"("
+                elif tok == b")":
+                    tok = b")"
+                elif tok == b"\\":
+                    tok = b"\\"
                 elif tok.isdigit():
                     tok += stream.read(2)
                     tok = chr(int(tok, base=8))
@@ -318,6 +321,7 @@ class NameObject(str, PdfObject):
                 stream.seek(-1, 1)
                 break
             name += tok
+        name = name.decode("ascii")
         return NameObject(name)
     readFromStream = staticmethod(readFromStream)
 
@@ -367,13 +371,13 @@ class DictionaryObject(dict, PdfObject):
                 # read \n after
                 stream.read(1)
             # this is a stream object, not a dictionary
-            assert b"/Length" in data
-            length = data[b"/Length"]
+            assert "/Length" in data
+            length = data["/Length"]
             if isinstance(length, IndirectObject):
                 t = stream.tell()
                 length = pdf.getObject(length)
                 stream.seek(t, 0)
-            data[b"__streamdata__"] = stream.read(length)
+            data["__streamdata__"] = stream.read(length)
             e = readNonWhitespace(stream)
             ndstream = stream.read(8)
             if (e + ndstream) != b"endstream":
@@ -388,7 +392,7 @@ class DictionaryObject(dict, PdfObject):
                 end = stream.read(9)
                 if end == b"endstream":
                     # we found it by looking back one character further.
-                    data[b"__streamdata__"] = data[b"__streamdata__"][:-1]
+                    data["__streamdata__"] = data["__streamdata__"][:-1]
                 else:
                     stream.seek(pos, 0)
                     raise "Unable to find 'endstream' marker after stream."

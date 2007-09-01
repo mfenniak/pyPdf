@@ -42,8 +42,11 @@ try:
 except ImportError:
     from io import StringIO
 
-from .generic import (readObject, DictionaryObject, DecodedStreamObject)
-from .utils import (readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList, PdfReadError, RC4_encrypt)
+from .generic import (readObject, DictionaryObject, DecodedStreamObject,
+        NameObject, NumberObject, ArrayObject, IndirectObject, StringObject,
+        StreamObject)
+from .utils import (readNonWhitespace, readUntilWhitespace,
+        ConvertFunctionsToVirtualList, PdfReadError, RC4_encrypt)
 
 ##
 # This class supports writing PDF files out, given pages produced by another
