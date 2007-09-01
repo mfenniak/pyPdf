@@ -858,25 +858,25 @@ class PageObject(DictionaryObject):
     # be overhauled to provide more ordered text in the future.
     # @return a string object
     def extractText(self):
-        text = ""
+        text = b""
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
             content = ContentStream(content, self.pdf)
         for operands,operator in content.operations:
-            if operator == "Tj":
-                text += operands[0]
-            elif operator == "T*":
-                text += "\n"
-            elif operator == "'":
-                text += "\n"
-                text += operands[0]
-            elif operator == '"':
-                text += "\n"
-                text += operands[2]
-            elif operator == "TJ":
+            if operator == b"Tj":
+                text += operands[0].data
+            elif operator == b"T*":
+                text += b"\n"
+            elif operator == b"'":
+                text += b"\n"
+                text += operands[0].data
+            elif operator == b'"':
+                text += b"\n"
+                text += operands[2].data
+            elif operator == b"TJ":
                 for i in operands[0]:
                     if isinstance(i, StringObject):
-                        text += i
+                        text += i.data
         return text
 
     ##
