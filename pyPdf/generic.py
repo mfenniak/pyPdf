@@ -297,6 +297,8 @@ class StringObject(PdfObject):
                 elif tok == b"\\":
                     tok = b"\\"
                 elif tok in b"0123456789":
+                    # Note: PDF spec says that octal characters don't need to
+                    # provide 3 numbers.  Not supported here.
                     tok += stream.read(2)
                     tok = bytes([int(tok, base=8)])
             txt += tok
