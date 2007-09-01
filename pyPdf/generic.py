@@ -91,11 +91,11 @@ class PdfObject(object):
 
 class NullObject(PdfObject):
     def writeToStream(self, stream, encryption_key):
-        stream.write("null")
+        stream.write(b"null")
 
     def readFromStream(stream):
         nulltxt = stream.read(4)
-        if nulltxt != "null":
+        if nulltxt != b"null":
             raise PdfReadError("error reading null object")
         return NullObject()
     readFromStream = staticmethod(readFromStream)
@@ -295,9 +295,9 @@ class StringObject(PdfObject):
                     tok = b")"
                 elif tok == b"\\":
                     tok = b"\\"
-                elif tok.isdigit():
+                elif tok in b"0123456789":
                     tok += stream.read(2)
-                    tok = chr(int(tok, base=8))
+                    tok = bytes([int(tok, base=8)])
             txt += tok
         return StringObject(txt)
     readFromStream = staticmethod(readFromStream)

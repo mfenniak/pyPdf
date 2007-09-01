@@ -37,10 +37,7 @@ __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
 import struct
-try:
-    from io import StringIO
-except ImportError:
-    from io import StringIO
+from io import BytesIO
 
 from .generic import (readObject, DictionaryObject, DecodedStreamObject,
         NameObject, NumberObject, ArrayObject, IndirectObject, StringObject,
@@ -385,7 +382,7 @@ class PdfFileReader(object):
             objStm = self.getObject(IndirectObject(stmnum, 0, self))
             assert objStm['/Type'] == '/ObjStm'
             assert idx < objStm['/N']
-            streamData = StringIO(objStm.getData())
+            streamData = BytesIO(objStm.getData())
             for i in range(objStm['/N']):
                 objnum = NumberObject.readFromStream(streamData)
                 readNonWhitespace(streamData)
@@ -523,14 +520,14 @@ class PdfFileReader(object):
                     startxref = newTrailer[NameObject("/Prev")]
                 else:
                     break
-            elif x.isdigit():
+            elif x in b"0123456789":
                 # PDF 1.5+ Cross-Reference Stream
                 stream.seek(-1, 1)
                 idnum, generation = self.readObjectHeader(stream)
                 xrefstream = readObject(stream, self)
                 assert xrefstream["/Type"] == "/XRef"
                 self.cacheIndirectObject(generation, idnum, xrefstream)
-                streamData = StringIO(xrefstream.getData())
+                streamData = BytesIO(xrefstream.getData())
                 num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
                 entrySizes = xrefstream.get("/W")
                 cnt = 0
@@ -935,9 +932,9 @@ class ContentStream(DecodedStreamObject):
             data = ""
             for s in stream:
                 data += s.getObject().getData()
-            stream = StringIO(data)
+            stream = BytesIO(data)
         else:
-            stream = StringIO(stream.getData())
+            stream = BytesIO(stream.getData())
         self.__parseContentStream(stream)
 
     def __parseContentStream(self, stream):
@@ -998,11 +995,11 @@ class ContentStream(DecodedStreamObject):
         return {"settings": settings, "data": data}
 
     def _getData(self):
-        newdata = StringIO()
+        newdata = BytesIO()
         for operands,operator in self.operations:
             if operator == "INLINE IMAGE":
                 newdata.write("BI")
-                dicttext = StringIO()
+                dicttext = BytesIO()
                 operands["settings"].writeToStream(dicttext, None)
                 newdata.write(dicttext.getvalue()[2:-2])
                 newdata.write("ID ")
@@ -1017,7 +1014,7 @@ class ContentStream(DecodedStreamObject):
         return newdata.getvalue()
 
     def _setData(self, value):
-        self.__parseContentStream(StringIO(value))
+        self.__parseContentStream(BytesIO(value))
 
     _data = property(_getData, _setData)
 

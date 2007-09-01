@@ -101,27 +101,28 @@ class FlateDecode(object):
         if predictor != 1:
             columns = decodeParms["/Columns"]
             if predictor >= 10:
-                newdata = ""
+                newdata = b""
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
-                prev_rowdata = "\x00"*rowlength
-                for row in range(len(data) / rowlength):
+                prev_rowdata = bytes(rowlength)
+                for row in range(len(data) // rowlength):
                     rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
-                    filterByte = ord(rowdata[0])
+                    filterByte = rowdata[0]
                     if filterByte == 0:
                         pass
                     elif filterByte == 1:
                         for i in range(2, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(rowdata[i-1])) % 256)
+                            rowdata[i] = (rowdata[i] + rowdata[i-1]) % 256
                     elif filterByte == 2:
                         for i in range(1, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(prev_rowdata[i])) % 256)
+                            rowdata[i] = (rowdata[i] + prev_rowdata[i]) % 256
                     else:
                         # unsupported PNG filter
-                        assert False
+                        from .utils import PdfReadError
+                        raise PdfReadError("unsupported PNG filter")
                     prev_rowdata = rowdata
-                    newdata += ''.join(rowdata[1:])
+                    newdata += bytes(rowdata[1:])
                 data = newdata
             else:
                 # unsupported predictor
@@ -207,7 +208,7 @@ class ASCII85Decode(object):
     decode = staticmethod(decode)
 
 def decodeStreamData(stream):
-    from generic import NameObject
+    from .generic import NameObject
     filters = stream.get("/Filter", ())
     if len(filters) and not isinstance(filters[0], NameObject):
         # we have a single filter instance
