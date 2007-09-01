@@ -383,7 +383,7 @@ class PdfFileReader(object):
             assert objStm['/Type'] == '/ObjStm'
             assert idx < objStm['/N']
             streamData = BytesIO(objStm.getData())
-            for i in range(objStm['/N']):
+            for i in range(int(objStm['/N'])):  # PY3K BUG: int shouldn't be necessary here
                 objnum = NumberObject.readFromStream(streamData)
                 readNonWhitespace(streamData)
                 streamData.seek(-1, 1)
@@ -1062,11 +1062,11 @@ class DocumentInformation(DictionaryObject):
 
 def convertToInt(d, size):
     if size <= 4:
-        d = "\x00\x00\x00\x00" + d
+        d = b"\x00\x00\x00\x00" + d
         d = d[-4:]
         return struct.unpack(">l", d)[0]
     elif size <= 8:
-        d = "\x00\x00\x00\x00\x00\x00\x00\x00" + d
+        d = b"\x00\x00\x00\x00\x00\x00\x00\x00" + d
         d = d[-8:]
         return struct.unpack(">q", d)[0]
     else:
