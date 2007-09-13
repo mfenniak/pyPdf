@@ -392,7 +392,7 @@ class DictionaryObject(dict, PdfObject):
                     data["__streamdata__"] = data["__streamdata__"][:-1]
                 else:
                     stream.seek(pos, 0)
-                    raise "Unable to find 'endstream' marker after stream."
+                    raise utils.PdfReadError, "Unable to find 'endstream' marker after stream."
         else:
             stream.seek(pos, 0)
         if data.has_key("__streamdata__"):
@@ -477,7 +477,7 @@ class EncodedStreamObject(StreamObject):
             return decoded._data
 
     def setData(self, data):
-        raise "Creating EncodedStreamObject is not currently supported"
+        raise utils.PdfReadError, "Creating EncodedStreamObject is not currently supported"
 
 
 class RectangleObject(ArrayObject):
