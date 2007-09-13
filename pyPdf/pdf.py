@@ -1,6 +1,8 @@
 # vim: sw=4:expandtab:foldmethod=marker
 #
 # Copyright (c) 2006, Mathieu Fenniak
+# Copyright (c) 2007, Ashish Kulkarni <kulkarni.ashish@gmail.com>
+#
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
