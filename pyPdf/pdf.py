@@ -349,7 +349,9 @@ class PdfFileReader(object):
             self.flattenedPages = []
             catalog = self.getObject(self.trailer["/Root"])
             pages = self.getObject(catalog["/Pages"])
+        indirectReference = None
         if isinstance(pages, IndirectObject):
+            indirectReference = pages
             pages = self.getObject(pages)
         t = pages["/Type"]
         if t == "/Pages":
@@ -364,7 +366,7 @@ class PdfFileReader(object):
                 # parent's value:
                 if not pages.has_key(attr):
                     pages[attr] = value
-            pageObj = PageObject(self)
+            pageObj = PageObject(self, indirectReference)
             pageObj.update(pages)
             self.flattenedPages.append(pageObj)
 
@@ -724,9 +726,10 @@ def createRectangleAccessor(name, fallback):
 # will be created by accessing the {@link #PdfFileReader.getPage getPage}
 # function of the {@link #PdfFileReader PdfFileReader} class.
 class PageObject(DictionaryObject):
-    def __init__(self, pdf):
+    def __init__(self, pdf, indirectReference = None):
         DictionaryObject.__init__(self)
         self.pdf = pdf
+        self.indirectReference = indirectReference
 
     ##
     # Rotates a page clockwise by increments of 90 degrees.
