@@ -43,7 +43,7 @@ from io import BytesIO
 
 from .generic import (readObject, DictionaryObject, DecodedStreamObject,
         NameObject, NumberObject, ArrayObject, IndirectObject, StringObject,
-        StreamObject)
+        StreamObject, NullObject)
 from .utils import (readNonWhitespace, readUntilWhitespace,
         ConvertFunctionsToVirtualList, PdfReadError, RC4_encrypt)
 
@@ -354,27 +354,27 @@ class PdfFileReader(object):
             catalog = get(self.trailer["/Root"])
             
             # get the name tree
-            if catalog.has_key("/Dests"):
+            if "/Dests" in catalog:
                 tree = get(catalog["/Dests"])
-            elif catalog.has_key("/Names"):
+            elif "/Names" in catalog:
                 names = get(catalog['/Names'])
-                if names.has_key("/Dests"):
+                if "/Dests" in names:
                     tree = get(names['/Dests'])
         
         if tree == None:
             return map
 
-        if tree.has_key("/Kids"):
+        if "/Kids" in tree:
             # recurse down the tree
             for kid in get(tree["/Kids"]):
                 self.getNamedDestinations(get(kid), map)
 
-        if tree.has_key("/Names"):
+        if "/Names" in tree:
             names = get(tree["/Names"])
             for i in range(0, len(names), 2):
                 key = get(names[i])
                 val = get(names[i+1])
-                if isinstance(val, DictionaryObject) and val.has_key('/D'):
+                if isinstance(val, DictionaryObject) and "/D" in val:
                     val = get(val['/D'])
                 dest = self._buildDestination(val, key)
                 if dest != None:
@@ -404,9 +404,9 @@ class PdfFileReader(object):
             catalog = get(self.trailer["/Root"])
             
             # get the outline dictionary and named destinations
-            if catalog.has_key("/Outlines"):
+            if "/Outlines" in catalog:
                 lines = get(catalog["/Outlines"])
-                if lines.has_key("/First"):
+                if "/First" in lines:
                     node = get(lines["/First"])
             self._namedDests = self.getNamedDestinations()
             
@@ -420,13 +420,13 @@ class PdfFileReader(object):
                 outlines.append(outline)
 
             # check for sub-outlines
-            if node.has_key("/First"):
+            if "/First" in node:
                 subOutlines = []
                 self.getOutlines(get(node["/First"]), subOutlines)
                 if subOutlines:
                     outlines.append(subOutlines)
 
-            if not node.has_key("/Next"):
+            if not "/Next" in node:
                 break
             node = get(node["/Next"])
 
@@ -438,7 +438,7 @@ class PdfFileReader(object):
             return None
             
         pageKey = (array[0].generation, array[0].idnum)
-        if not self.pageNumbers.has_key(pageKey):
+        if not pageKey in self.pageNumbers:
             return None
 
         pageNum = self.pageNumbers[pageKey]
@@ -447,13 +447,13 @@ class PdfFileReader(object):
     def _buildOutline(self, node):
         dest, title, outline = None, None, None
         
-        if node.has_key("/A") and node.has_key("/Title"):
+        if "/A" in node and "/Title" in node:
             # Action, section 8.5 (only type GoTo supported)
             title  = self.safeGetObject(node["/Title"])
             action = self.safeGetObject(node["/A"])
             if action["/S"] == "/GoTo":
                 dest = self.safeGetObject(action["/D"])
-        elif node.has_key("/Dest") and node.has_key("/Title"):
+        elif "/Dest" in node and "/Title" in node:
             # Destination, section 8.2.1
             title = self.safeGetObject(node["/Title"])
             dest  = self.safeGetObject(node["/Dest"])
@@ -462,7 +462,7 @@ class PdfFileReader(object):
         if dest:
             if isinstance(dest, ArrayObject):
                 outline = self._buildDestination(dest, title)
-            elif isinstance(dest, str) and self._namedDests.has_key(dest):
+            elif isinstance(dest, str) and dest in self._namedDests:
                 outline = self._namedDests[dest]
                 outline.title = title
         return outline
@@ -1237,7 +1237,7 @@ class Destination(DictionaryObject):
             raise PdfReadError("Unknown Destination Type: %s" % type)
           
     def setTitle(self, title):
-        self["/Title"] = title.strip()
+        self["/Title"] = title.data.strip(b" ")
 
     ##
     # Read-write property accessing the destination title.
