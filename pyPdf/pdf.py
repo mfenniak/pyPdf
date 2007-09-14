@@ -338,7 +338,7 @@ class PdfFileReader(object):
     # getNamedDestinations} function.
     # <p>
     # Stability: Added in v1.10, will exist for all future v1.x releases.
-    namedDestinations = property(lambda self: 
+    namedDestinations = property(lambda self:
                                   self.getNamedDestinations(), None, None)
 
     ##
@@ -360,7 +360,9 @@ class PdfFileReader(object):
             if catalog.has_key("/Dests"):
                 tree = get(catalog["/Dests"])
             elif catalog.has_key("/Names"):
-                tree = get( get(catalog["/Names"])["/Dests"] )
+                names = get(catalog['/Names'])
+                if names.has_key("/Dests"):
+                    tree = get(names['/Dests'])
         
         if tree == None:
             return map
