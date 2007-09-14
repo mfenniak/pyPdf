@@ -1,6 +1,8 @@
 # vim: sw=4:expandtab:foldmethod=marker
 #
 # Copyright (c) 2006, Mathieu Fenniak
+# Copyright (c) 2007, Ashish Kulkarni <kulkarni.ashish@gmail.com>
+#
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -268,6 +270,7 @@ class PdfFileWriter(object):
 class PdfFileReader(object):
     def __init__(self, stream):
         self.flattenedPages = None
+        self.pageNumbers = {}
         self.resolvedObjects = {}
         self.read(stream)
         self.stream = stream
@@ -327,6 +330,142 @@ class PdfFileReader(object):
         return self.flattenedPages[pageNumber]
 
     ##
+    # Read-only property that accesses the 
+    # {@link #PdfFileReader.getNamedDestinations 
+    # getNamedDestinations} function.
+    # <p>
+    # Stability: Added in v1.10, will exist for all future v1.x releases.
+    namedDestinations = property(lambda self: 
+                                  self.getNamedDestinations(), None, None)
+
+    ##
+    # Retrieves the named destinations present in the document.
+    # <p>
+    # Stability: Added in v1.10, will exist for all future v1.x releases.
+    # @return Returns a dict which maps names to {@link #Destination
+    # destinations}.
+    def getNamedDestinations(self, tree = None, map = None):
+        if self.flattenedPages == None:
+            self._flatten()
+        
+        get = self.safeGetObject
+        if map == None:
+            map = {}
+            catalog = get(self.trailer["/Root"])
+            
+            # get the name tree
+            if catalog.has_key("/Dests"):
+                tree = get(catalog["/Dests"])
+            elif catalog.has_key("/Names"):
+                tree = get( get(catalog["/Names"])["/Dests"] )
+        
+        if tree == None:
+            return map
+
+        if tree.has_key("/Kids"):
+            # recurse down the tree
+            for kid in get(tree["/Kids"]):
+                self.getNamedDestinations(get(kid), map)
+
+        if tree.has_key("/Names"):
+            names = get(tree["/Names"])
+            for i in range(0, len(names), 2):
+                key = get(names[i])
+                val = get(names[i+1])
+                if isinstance(val, DictionaryObject) and val.has_key('/D'):
+                    val = get(val['/D'])
+                dest = self._buildDestination(val, key)
+                if dest != None:
+                    map[key] = dest
+
+        return map
+
+    ##
+    # Read-only property that accesses the {@link #PdfFileReader.getOutlines
+    # getOutlines} function.
+    # <p>
+    # Stability: Added in v1.10, will exist for all future v1.x releases.
+    outlines = property(lambda self: self.getOutlines(), None, None)
+
+    ##
+    # Retrieves the document outline present in the document.
+    # <p>
+    # Stability: Added in v1.10, will exist for all future v1.x releases.
+    # @return Returns a nested list of {@link #Destination destinations}.
+    def getOutlines(self, node = None, outlines = None):
+        if self.flattenedPages == None:
+            self._flatten()
+        
+        get = self.safeGetObject
+        if outlines == None:
+            outlines = []
+            catalog = get(self.trailer["/Root"])
+            
+            # get the outline dictionary and named destinations
+            if catalog.has_key("/Outlines"):
+                lines = get(catalog["/Outlines"])
+                if lines.has_key("/First"):
+                    node = get(lines["/First"])
+            self._namedDests = self.getNamedDestinations()
+            
+        if node == None:
+          return outlines
+          
+        # see if there are any more outlines
+        while 1:
+            outline = self._buildOutline(node)
+            if outline:
+                outlines.append(outline)
+
+            # check for sub-outlines
+            if node.has_key("/First"):
+                subOutlines = []
+                self.getOutlines(get(node["/First"]), subOutlines)
+                if subOutlines:
+                    outlines.append(subOutlines)
+
+            if not node.has_key("/Next"):
+                break
+            node = get(node["/Next"])
+
+        return outlines
+
+    def _buildDestination(self, array, title):
+        if not (isinstance(array, ArrayObject) and len(array) >= 2 and \
+                isinstance(array[0], IndirectObject)):
+            return None
+            
+        pageKey = (array[0].generation, array[0].idnum)
+        if not self.pageNumbers.has_key(pageKey):
+            return None
+
+        pageNum = self.pageNumbers[pageKey]
+        return Destination(*([title, pageNum]+array[1:]))
+          
+    def _buildOutline(self, node):
+        dest, title, outline = None, None, None
+        
+        if node.has_key("/A") and node.has_key("/Title"):
+            # Action, section 8.5 (only type GoTo supported)
+            title  = self.safeGetObject(node["/Title"])
+            action = self.safeGetObject(node["/A"])
+            if action["/S"] == "/GoTo":
+                dest = self.safeGetObject(action["/D"])
+        elif node.has_key("/Dest") and node.has_key("/Title"):
+            # Destination, section 8.2.1
+            title = self.safeGetObject(node["/Title"])
+            dest  = self.safeGetObject(node["/Dest"])
+
+        # if destination found, then create outline
+        if dest:
+            if isinstance(dest, ArrayObject):
+                outline = self._buildDestination(dest, title)
+            elif isinstance(dest, str) and self._namedDests.has_key(dest):
+                outline = self._namedDests[dest]
+                outline.title = title
+        return outline
+
+    ##
     # Read-only property that emulates a list based upon the {@link
     # #PdfFileReader.getNumPages getNumPages} and {@link #PdfFileReader.getPage
     # getPage} functions.
@@ -346,7 +485,9 @@ class PdfFileReader(object):
             self.flattenedPages = []
             catalog = self.getObject(self.trailer["/Root"])
             pages = self.getObject(catalog["/Pages"])
+        indirectReference = None
         if isinstance(pages, IndirectObject):
+            indirectReference = pages
             pages = self.getObject(pages)
         t = pages["/Type"]
         if t == "/Pages":
@@ -361,8 +502,11 @@ class PdfFileReader(object):
                 # parent's value:
                 if attr not in pages:
                     pages[attr] = value
-            pageObj = PageObject(self)
+            pageObj = PageObject(self, indirectReference)
             pageObj.update(pages)
+            if indirectReference:
+                key = (indirectReference.generation, indirectReference.idnum)
+                self.pageNumbers[key] = len(self.flattenedPages)
             self.flattenedPages.append(pageObj)
 
     def safeGetObject(self, obj):
@@ -721,9 +865,10 @@ def createRectangleAccessor(name, fallback):
 # will be created by accessing the {@link #PdfFileReader.getPage getPage}
 # function of the {@link #PdfFileReader PdfFileReader} class.
 class PageObject(DictionaryObject):
-    def __init__(self, pdf):
+    def __init__(self, pdf, indirectReference = None):
         DictionaryObject.__init__(self)
         self.pdf = pdf
+        self.indirectReference = indirectReference
 
     ##
     # Rotates a page clockwise by increments of 90 degrees.
@@ -1058,6 +1203,79 @@ class DocumentInformation(DictionaryObject):
     # exist for all future v1.x releases.
     # @return A string, or None if the producer is not provided.
     producer = property(lambda self: self.get("/Producer", None), None, None)
+
+
+##
+# A class representing a destination within a PDF file.
+# See section 8.2.1 of the PDF 1.6 reference.
+# Stability: Added in v1.10, will exist for all v1.x releases.
+class Destination(DictionaryObject):
+    def __init__(self, *args):
+        DictionaryObject.__init__(self)
+        self.title = args[0]
+        self["/Page"], self["/Type"] = args[1], args[2]
+        
+        # from table 8.2 of the PDF 1.6 reference.
+        mapNull = lambda x: {True: None, False: x}[isinstance(x, NullObject)]
+        params = map(mapNull, args[3:])
+        type = self["/Type"]
+
+        if type == "/XYZ":
+            self["/Left"], self["/Top"], self["/Zoom"] = params
+        elif type == "/FitR":
+            self["/Left"], self["/Bottom"], \
+                self["/Right"], self["/Top"] = params
+        elif type in ["/FitH", "FitBH"]:
+            self["/Top"], = params
+        elif type in ["/FitV", "FitBV"]:
+            self["/Left"], = params
+        elif type in ["/Fit", "FitB"]:
+            pass
+        else:
+            raise PdfReadError("Unknown Destination Type: %s" % type)
+          
+    def setTitle(self, title):
+        self["/Title"] = title.strip()
+
+    ##
+    # Read-write property accessing the destination title.
+    # @return A string.
+    title = property(lambda self: self.get("/Title"), setTitle, None)
+
+    ##
+    # Read-only property accessing the destination page.
+    # @return An integer.
+    page = property(lambda self: self.get("/Page"), None, None)
+
+    ##
+    # Read-only property accessing the destination type.
+    # @return A string.
+    type = property(lambda self: self.get("/Type"), None, None)
+
+    ##
+    # Read-only property accessing the zoom factor.
+    # @return A number, or None if not available.
+    zoom = property(lambda self: self.get("/Zoom", None), None, None)
+
+    ##
+    # Read-only property accessing the left horizontal coordinate.
+    # @return A number, or None if not available.
+    left = property(lambda self: self.get("/Left", None), None, None)
+
+    ##
+    # Read-only property accessing the right horizontal coordinate.
+    # @return A number, or None if not available.
+    right = property(lambda self: self.get("/Right", None), None, None)
+
+    ##
+    # Read-only property accessing the top vertical coordinate.
+    # @return A number, or None if not available.
+    top = property(lambda self: self.get("/Top", None), None, None)
+
+    ##
+    # Read-only property accessing the bottom vertical coordinate.
+    # @return A number, or None if not available.
+    bottom = property(lambda self: self.get("/Bottom", None), None, None)
 
 
 def convertToInt(d, size):
