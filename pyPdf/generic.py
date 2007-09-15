@@ -38,6 +38,7 @@ import re
 from utils import readNonWhitespace, RC4_encrypt
 import filters
 import utils
+import decimal
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -203,9 +204,9 @@ class IndirectObject(PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
-class FloatObject(float, PdfObject):
+class FloatObject(decimal.Decimal, PdfObject):
     def writeToStream(self, stream, encryption_key):
-        stream.write(repr(self))
+        stream.write(str(self))
 
 
 class NumberObject(int, PdfObject):
