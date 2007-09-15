@@ -584,6 +584,11 @@ class PdfFileReader(object):
         return obj
 
     def readObjectHeader(self, stream):
+        # Should never be necessary to read out whitespace, since the
+        # cross-reference table should put us in the right spot to read the
+        # object header.  In reality... some files have stupid cross reference
+        # tables that are off by whitespace bytes.
+        readNonWhitespace(stream); stream.seek(-1, 1)
         idnum = readUntilWhitespace(stream)
         generation = readUntilWhitespace(stream)
         obj = stream.read(3)
