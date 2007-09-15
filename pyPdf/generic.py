@@ -34,6 +34,7 @@ Implementation of generic PDF objects (dictionary, number, string, and so on)
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
+import decimal
 import re
 from .utils import (readNonWhitespace, RC4_encrypt, PdfReadError)
 from .filters import (FlateDecode, decodeStreamData)
@@ -203,9 +204,9 @@ class IndirectObject(PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
-class FloatObject(float, PdfObject):
+class FloatObject(decimal.Decimal, PdfObject):
     def writeToStream(self, stream, encryption_key):
-        stream.write(repr(self).encode("ascii"))
+        stream.write(str(self).encode("ascii"))
 
 
 class NumberObject(int, PdfObject):
@@ -221,7 +222,7 @@ class NumberObject(int, PdfObject):
                 break
             name += tok
         if name.find(b".") != -1:
-            return FloatObject(name)
+            return FloatObject(name.decode("ascii"))
         else:
             return NumberObject(name)
     readFromStream = staticmethod(readFromStream)
