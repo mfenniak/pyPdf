@@ -70,7 +70,7 @@ class PdfFileWriter(object):
         # info object
         info = DictionaryObject()
         info.update({
-                NameObject("/Producer"): StringObject("Python PDF Library - http://pybrary.net/pyPdf/")
+                NameObject("/Producer"): StringObject(u"Python PDF Library - http://pybrary.net/pyPdf/")
                 })
         self._info = self._addObject(info)
 

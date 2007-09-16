@@ -39,6 +39,7 @@ from utils import readNonWhitespace, RC4_encrypt
 import filters
 import utils
 import decimal
+import codecs
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -231,18 +232,29 @@ class NumberObject(int, PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
-class StringObject(str, PdfObject):
-    def writeToStream(self, stream, encryption_key):
-        string = self
+class StringObject(PdfObject):
+    def __new__(cls, string):
+        if isinstance(string, unicode):
+            return TextStringObject(string)
+        elif isinstance(string, str):
+            if string.startswith(codecs.BOM_UTF16_BE):
+                return TextStringObject(string.decode("utf-16"))
+            else:
+                return ByteStringObject(string)
+        else:
+            raise TypeError("StringObject.__new__ should have str or unicode arg")
+
+    def writeToStream(bytearr, stream, encryption_key):
         if encryption_key:
-            string = RC4_encrypt(encryption_key, string)
+            bytearr = RC4_encrypt(encryption_key, bytearr)
         stream.write("(")
-        for c in string:
+        for c in bytearr:
             if not c.isalnum() and c != ' ':
                 stream.write("\\%03o" % ord(c))
             else:
                 stream.write(c)
         stream.write(")")
+    writeToStream = staticmethod(writeToStream)
 
     def readHexStringFromStream(stream):
         stream.read(1)
@@ -296,9 +308,32 @@ class StringObject(str, PdfObject):
                 elif tok.isdigit():
                     tok += stream.read(2)
                     tok = chr(int(tok, base=8))
+                elif tok in "\n\r":
+                    # This case is  hit when a backslash followed by a line
+                    # break occurs.  If it's a multi-char EOL, consume the
+                    # second character:
+                    tok = stream.read(1)
+                    if not tok in "\n\r":
+                        stream.seek(-1, 1)
+                    # Then don't add anything to the actual string, since this
+                    # line break was escaped:
+                    tok = ''
+                else:
+                    raise utils.PdfReadError("Unexpected escaped string")
             txt += tok
         return StringObject(txt)
     readFromStream = staticmethod(readFromStream)
+
+
+class ByteStringObject(str, StringObject):
+    def writeToStream(self, stream, encryption_key):
+        StringObject.writeToStream(self, stream, encryption_key)
+
+
+class TextStringObject(unicode, StringObject):
+    def writeToStream(self, stream, encryption_key):
+        bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
+        StringObject.writeToStream(bytearr, stream, encryption_key)
 
 
 class NameObject(str, PdfObject):
