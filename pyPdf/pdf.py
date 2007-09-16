@@ -1183,43 +1183,66 @@ class ContentStream(DecodedStreamObject):
 
 ##
 # A class representing the basic document metadata provided in a PDF File.
+# <p>
+# As of pyPdf v1.10, all text properties of the document metadata have two
+# properties, eg. author and author_raw.  The non-raw property will always
+# return a TextStringObject, making it ideal for a case where the metadata is
+# being displayed.  The raw property can sometimes return a ByteStringObject,
+# if pyPdf was unable to decode the string's text encoding; this requires
+# additional safety in the caller and therefore is not as commonly accessed.
 class DocumentInformation(DictionaryObject):
     def __init__(self):
         DictionaryObject.__init__(self)
 
+    def getText(self, key):
+        retval = self.get(key, None)
+        if isinstance(retval, TextStringObject):
+            return retval
+        return None
+
     ##
     # Read-only property accessing the document's title.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the title is not provided.
-    title = property(lambda self: self.get("/Title", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the title is not provided.
+    title = property(lambda self: self.getText("/Title"))
+    title_raw = property(lambda self: self.get("/Title"))
 
     ##
     # Read-only property accessing the document's author.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the author is not provided.
-    author = property(lambda self: self.get("/Author", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the author is not provided.
+    author = property(lambda self: self.getText("/Author"))
+    author_raw = property(lambda self: self.get("/Author"))
 
     ##
     # Read-only property accessing the subject of the document.  Added in v1.6,
-    # will exist for all future v1.x releases.
-    # @return A string, or None if the subject is not provided.
-    subject = property(lambda self: self.get("/Subject", None), None, None)
+    # will exist for all future v1.x releases.  Modified in v1.10 to always
+    # return a unicode string (TextStringObject).
+    # @return A unicode string, or None if the subject is not provided.
+    subject = property(lambda self: self.getText("/Subject"))
+    subject_raw = property(lambda self: self.get("/Subject"))
 
     ##
     # Read-only property accessing the document's creator.  If the document was
     # converted to PDF from another format, the name of the application (for
     # example, OpenOffice) that created the original document from which it was
     # converted.  Added in v1.6, will exist for all future v1.x releases.
-    # @return A string, or None if the creator is not provided.
-    creator = property(lambda self: self.get("/Creator", None), None, None)
+    # Modified in v1.10 to always return a unicode string (TextStringObject).
+    # @return A unicode string, or None if the creator is not provided.
+    creator = property(lambda self: self.getText("/Creator"))
+    creator_raw = property(lambda self: self.get("/Creator"))
 
     ##
     # Read-only property accessing the document's producer.  If the document
     # was converted to PDF from another format, the name of the application
     # (for example, OSX Quartz) that converted it to PDF.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the producer is not provided.
-    producer = property(lambda self: self.get("/Producer", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the producer is not provided.
+    producer = property(lambda self: self.getText("/Producer"))
+    producer_raw = property(lambda self: self.get("/Producer"))
 
 
 ##
