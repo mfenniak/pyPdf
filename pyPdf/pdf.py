@@ -1026,7 +1026,9 @@ class PageObject(DictionaryObject):
                 text += "\n"
             elif operator == b"'":
                 text += "\n"
-                text += operands[0]
+                _text = operands[0]
+                if isinstance(_text, TextStringObject):
+                    text += operands[0]
             elif operator == b'"':
                 _text = operands[2]
                 if isinstance(_text, TextStringObject):
