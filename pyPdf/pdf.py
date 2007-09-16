@@ -43,7 +43,7 @@ from io import BytesIO
 
 from .generic import (readObject, DictionaryObject, DecodedStreamObject,
         NameObject, NumberObject, ArrayObject, IndirectObject, StringObject,
-        StreamObject, NullObject)
+        StreamObject, NullObject, TextStringObject)
 from .utils import (readNonWhitespace, readUntilWhitespace,
         ConvertFunctionsToVirtualList, PdfReadError, RC4_encrypt)
 
@@ -67,7 +67,7 @@ class PdfFileWriter(object):
         # info object
         info = DictionaryObject()
         info.update({
-                NameObject("/Producer"): StringObject(b"Python PDF Library - http://pybrary.net/pyPdf/")
+                NameObject("/Producer"): StringObject("Python PDF Library - http://pybrary.net/pyPdf/")
                 })
         self._info = self._addObject(info)
 
@@ -132,10 +132,10 @@ class PdfFileWriter(object):
         ID_2 = hashlib.md5(repr(random.random()).encode("ascii")).digest()
         self._ID = ArrayObject((StringObject(ID_1), StringObject(ID_2)))
         if rev == 2:
-            U, key = _alg34(user_pwd, O.data, P, ID_1)
+            U, key = _alg34(user_pwd, O, P, ID_1)
         else:
             assert rev == 3
-            U, key = _alg35(user_pwd, rev, keylen, O.data, P, ID_1, False)
+            U, key = _alg35(user_pwd, rev, keylen, O, P, ID_1, False)
         encrypt = DictionaryObject()
         encrypt[NameObject("/Filter")] = NameObject("/Standard")
         encrypt[NameObject("/V")] = NumberObject(V)
@@ -569,7 +569,7 @@ class PdfFileReader(object):
 
     def _decryptObject(self, obj, key):
         if isinstance(obj, StringObject):
-            obj = StringObject(RC4_encrypt(key, obj.data))
+            obj = StringObject(RC4_encrypt(key, obj))
         elif isinstance(obj, StreamObject):
             obj._data = RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
@@ -792,7 +792,7 @@ class PdfFileReader(object):
             else:
                 keylen = self.safeGetObject(encrypt['/Length']) // 8
             key = _alg33_1(password, rev, keylen)
-            real_O = self.safeGetObject(encrypt["/O"]).data
+            real_O = self.safeGetObject(encrypt["/O"])
             if rev == 2:
                 userpass = RC4_encrypt(key, real_O)
             else:
@@ -812,10 +812,10 @@ class PdfFileReader(object):
     def _authenticateUserPassword(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
         rev = self.safeGetObject(encrypt['/R'])
-        owner_entry = self.safeGetObject(encrypt['/O']).data
+        owner_entry = self.safeGetObject(encrypt['/O'])
         p_entry = self.safeGetObject(encrypt['/P'])
         id_entry = self.safeGetObject(self.trailer['/ID'])
-        id1_entry = self.safeGetObject(id_entry[0]).data
+        id1_entry = self.safeGetObject(id_entry[0])
         if rev == 2:
             U, key = _alg34(password, owner_entry, p_entry, id1_entry)
         elif rev >= 3:
@@ -823,8 +823,8 @@ class PdfFileReader(object):
                     self.safeGetObject(encrypt["/Length"]) // 8, owner_entry,
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U']).data
-        return U == real_U, key
+        real_U = self.safeGetObject(encrypt['/U'])
+        return type(U) == type(real_U) and U == real_U, key
 
     def getIsEncrypted(self):
         return "/Encrypt" in self.trailer
@@ -1008,27 +1008,34 @@ class PageObject(DictionaryObject):
     # <p>
     # Stability: Added in v1.7, will exist for all future v1.x releases.  May
     # be overhauled to provide more ordered text in the future.
-    # @return a string object
+    # @return a unicode string object
     def extractText(self):
-        text = b""
+        text = ""
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
             content = ContentStream(content, self.pdf)
+        # Note: we check all strings are TextStringObjects.  ByteStringObjects
+        # are strings where the byte->string encoding was unknown, so adding
+        # them to the text here would be gibberish.
         for operands,operator in content.operations:
             if operator == b"Tj":
-                text += operands[0].data
+                _text = operands[0]
+                if isinstance(_text, TextStringObject):
+                    text += _text
             elif operator == b"T*":
-                text += b"\n"
+                text += "\n"
             elif operator == b"'":
-                text += b"\n"
-                text += operands[0].data
+                text += "\n"
+                text += operands[0]
             elif operator == b'"':
-                text += b"\n"
-                text += operands[2].data
+                _text = operands[2]
+                if isinstance(_text, TextStringObject):
+                    text += "\n"
+                    text += _text
             elif operator == b"TJ":
                 for i in operands[0]:
-                    if isinstance(i, StringObject):
-                        text += i.data
+                    if isinstance(i, TextStringObject):
+                        text += i
         return text
 
     ##
@@ -1173,43 +1180,66 @@ class ContentStream(DecodedStreamObject):
 
 ##
 # A class representing the basic document metadata provided in a PDF File.
+# <p>
+# As of pyPdf v1.10, all text properties of the document metadata have two
+# properties, eg. author and author_raw.  The non-raw property will always
+# return a TextStringObject, making it ideal for a case where the metadata is
+# being displayed.  The raw property can sometimes return a ByteStringObject,
+# if pyPdf was unable to decode the string's text encoding; this requires
+# additional safety in the caller and therefore is not as commonly accessed.
 class DocumentInformation(DictionaryObject):
     def __init__(self):
         DictionaryObject.__init__(self)
 
+    def getText(self, key):
+        retval = self.get(key, None)
+        if isinstance(retval, TextStringObject):
+            return retval
+        return None
+
     ##
     # Read-only property accessing the document's title.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the title is not provided.
-    title = property(lambda self: self.get("/Title", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the title is not provided.
+    title = property(lambda self: self.getText("/Title"))
+    title_raw = property(lambda self: self.get("/Title"))
 
     ##
     # Read-only property accessing the document's author.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the author is not provided.
-    author = property(lambda self: self.get("/Author", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the author is not provided.
+    author = property(lambda self: self.getText("/Author"))
+    author_raw = property(lambda self: self.get("/Author"))
 
     ##
     # Read-only property accessing the subject of the document.  Added in v1.6,
-    # will exist for all future v1.x releases.
-    # @return A string, or None if the subject is not provided.
-    subject = property(lambda self: self.get("/Subject", None), None, None)
+    # will exist for all future v1.x releases.  Modified in v1.10 to always
+    # return a unicode string (TextStringObject).
+    # @return A unicode string, or None if the subject is not provided.
+    subject = property(lambda self: self.getText("/Subject"))
+    subject_raw = property(lambda self: self.get("/Subject"))
 
     ##
     # Read-only property accessing the document's creator.  If the document was
     # converted to PDF from another format, the name of the application (for
     # example, OpenOffice) that created the original document from which it was
     # converted.  Added in v1.6, will exist for all future v1.x releases.
-    # @return A string, or None if the creator is not provided.
-    creator = property(lambda self: self.get("/Creator", None), None, None)
+    # Modified in v1.10 to always return a unicode string (TextStringObject).
+    # @return A unicode string, or None if the creator is not provided.
+    creator = property(lambda self: self.getText("/Creator"))
+    creator_raw = property(lambda self: self.get("/Creator"))
 
     ##
     # Read-only property accessing the document's producer.  If the document
     # was converted to PDF from another format, the name of the application
     # (for example, OSX Quartz) that converted it to PDF.  Added in v1.6, will
-    # exist for all future v1.x releases.
-    # @return A string, or None if the producer is not provided.
-    producer = property(lambda self: self.get("/Producer", None), None, None)
+    # exist for all future v1.x releases.  Modified in v1.10 to always return a
+    # unicode string (TextStringObject).
+    # @return A unicode string, or None if the producer is not provided.
+    producer = property(lambda self: self.getText("/Producer"))
+    producer_raw = property(lambda self: self.get("/Producer"))
 
 
 ##
@@ -1242,7 +1272,7 @@ class Destination(DictionaryObject):
             raise PdfReadError("Unknown Destination Type: %s" % type)
           
     def setTitle(self, title):
-        self["/Title"] = title.data.strip(b" ")
+        self["/Title"] = title.strip(b" ")
 
     ##
     # Read-write property accessing the destination title.

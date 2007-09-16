@@ -34,10 +34,11 @@ Implementation of generic PDF objects (dictionary, number, string, and so on)
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
-import decimal
 import re
 from .utils import (readNonWhitespace, RC4_encrypt, PdfReadError)
 from .filters import (FlateDecode, decodeStreamData)
+import decimal
+import codecs
 
 def readObject(stream, pdf):
     tok = stream.read(1)
@@ -228,22 +229,42 @@ class NumberObject(int, PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
+##
+# An abstract class that serves as a base class for ByteStringObject and
+# TextStringObject.  An __new__ function delegates creation to the correct
+# byte/text type depending on the input, so a direct instance of StringObject
+# itself will never be created.
 class StringObject(PdfObject):
-    def __init__(self, data):
-        assert isinstance(data, bytes)
-        self.data = data
+    def __new__(cls, string):
+        if isinstance(string, str):
+            return TextStringObject(string)
+        elif isinstance(string, bytes):
+            if string.startswith(codecs.BOM_UTF16_BE):
+                return TextStringObject(string.decode("utf-16"))
+            else:
+                # This is probably a big performance hit here, but we need to
+                # convert string objects into the text/unicode-aware version if
+                # possible... and the only way to check if that's possible is
+                # to try.  Some strings are strings, some are just byte arrays.
+                try:
+                    uni = decode_pdfdocencoding(string)
+                    return TextStringObject(uni)
+                except UnicodeDecodeError:
+                    return ByteStringObject(string)
+        else:
+            raise TypeError("StringObject.__new__ should have str or unicode arg")
 
-    def writeToStream(self, stream, encryption_key):
-        string = self.data
+    def writeToStream(bytearr, stream, encryption_key):
         if encryption_key:
-            string = RC4_encrypt(encryption_key, string)
+            bytearr = RC4_encrypt(encryption_key, bytearr)
         stream.write(b"(")
-        for c in string:
+        for c in bytearr:
             if (c == 32) or (65 <= c <= 90) or (97 <= c <= 122):
                 stream.write(bytes((c,)))
             else:
                 stream.write(("\\%03o" % c).encode("ascii"))
         stream.write(b")")
+    writeToStream = staticmethod(writeToStream)
 
     def readHexStringFromStream(stream):
         stream.read(1)
@@ -299,9 +320,48 @@ class StringObject(PdfObject):
                     # provide 3 numbers.  Not supported here.
                     tok += stream.read(2)
                     tok = bytes([int(tok, base=8)])
+                elif tok in b"\n\r":
+                    # This case is  hit when a backslash followed by a line
+                    # break occurs.  If it's a multi-char EOL, consume the
+                    # second character:
+                    tok = stream.read(1)
+                    if not tok in b"\n\r":
+                        stream.seek(-1, 1)
+                    # Then don't add anything to the actual string, since this
+                    # line break was escaped:
+                    tok = b''
+                else:
+                    raise utils.PdfReadError("Unexpected escaped string")
             txt += tok
         return StringObject(txt)
     readFromStream = staticmethod(readFromStream)
+
+
+##
+# Represents a string object where the text encoding could not be determined.
+# This occurs quite often, as the PDF spec doesn't provide an alternate way to
+# represent strings -- for example, the encryption data stored in files (like
+# /O) is clearly not text, but is still stored in a "String" object.
+class ByteStringObject(bytes, StringObject):
+    def writeToStream(self, stream, encryption_key):
+        StringObject.writeToStream(self, stream, encryption_key)
+
+
+##
+# Represents a string object that has been decoded into a real unicode string.
+# If read from a PDF document, this string appeared to match the
+# PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
+# occur.
+class TextStringObject(str, StringObject):
+    def writeToStream(self, stream, encryption_key):
+        # Try to write the string out as a PDFDocEncoding encoded string.  It's
+        # nicer to look at in the PDF file.  Sadly, we take a performance hit
+        # here for trying...
+        try:
+            bytearr = encode_pdfdocencoding(self)
+        except UnicodeEncodeError:
+            bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
+        StringObject.writeToStream(bytearr, stream, encryption_key)
 
 
 class NameObject(str, PdfObject):
@@ -549,4 +609,70 @@ class RectangleObject(ArrayObject):
     lowerRight = property(getLowerRight, setLowerRight, None, None)
     upperLeft = property(getUpperLeft, setUpperLeft, None, None)
     upperRight = property(getUpperRight, setUpperRight, None, None)
+
+
+def encode_pdfdocencoding(unicode_string):
+    retval = b''
+    for c in unicode_string:
+        try:
+            retval.append(_pdfDocEncoding_rev[c])
+        except KeyError:
+            raise UnicodeEncodeError("pdfdocencoding", c, -1, -1,
+                    "does not exist in translation table")
+    return retval
+
+def decode_pdfdocencoding(byte_array):
+    retval = ''
+    for b in byte_array:
+        c = _pdfDocEncoding[b]
+        if c == '\u0000':
+            raise UnicodeDecodeError("pdfdocencoding", byte_array, -1, -1,
+                    "does not exist in translation table")
+        retval += c
+    return retval
+
+_pdfDocEncoding = (
+  '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000',
+  '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000',
+  '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000', '\u0000',
+  '\u02d8', '\u02c7', '\u02c6', '\u02d9', '\u02dd', '\u02db', '\u02da', '\u02dc',
+  '\u0020', '\u0021', '\u0022', '\u0023', '\u0024', '\u0025', '\u0026', '\u0027',
+  '\u0028', '\u0029', '\u002a', '\u002b', '\u002c', '\u002d', '\u002e', '\u002f',
+  '\u0030', '\u0031', '\u0032', '\u0033', '\u0034', '\u0035', '\u0036', '\u0037',
+  '\u0038', '\u0039', '\u003a', '\u003b', '\u003c', '\u003d', '\u003e', '\u003f',
+  '\u0040', '\u0041', '\u0042', '\u0043', '\u0044', '\u0045', '\u0046', '\u0047',
+  '\u0048', '\u0049', '\u004a', '\u004b', '\u004c', '\u004d', '\u004e', '\u004f',
+  '\u0050', '\u0051', '\u0052', '\u0053', '\u0054', '\u0055', '\u0056', '\u0057',
+  '\u0058', '\u0059', '\u005a', '\u005b', '\u005c', '\u005d', '\u005e', '\u005f',
+  '\u0060', '\u0061', '\u0062', '\u0063', '\u0064', '\u0065', '\u0066', '\u0067',
+  '\u0068', '\u0069', '\u006a', '\u006b', '\u006c', '\u006d', '\u006e', '\u006f',
+  '\u0070', '\u0071', '\u0072', '\u0073', '\u0074', '\u0075', '\u0076', '\u0077',
+  '\u0078', '\u0079', '\u007a', '\u007b', '\u007c', '\u007d', '\u007e', '\u0000',
+  '\u2022', '\u2020', '\u2021', '\u2026', '\u2014', '\u2013', '\u0192', '\u2044',
+  '\u2039', '\u203a', '\u2212', '\u2030', '\u201e', '\u201c', '\u201d', '\u2018',
+  '\u2019', '\u201a', '\u2122', '\ufb01', '\ufb02', '\u0141', '\u0152', '\u0160',
+  '\u0178', '\u017d', '\u0131', '\u0142', '\u0153', '\u0161', '\u017e', '\u0000',
+  '\u20ac', '\u00a1', '\u00a2', '\u00a3', '\u00a4', '\u00a5', '\u00a6', '\u00a7',
+  '\u00a8', '\u00a9', '\u00aa', '\u00ab', '\u00ac', '\u0000', '\u00ae', '\u00af',
+  '\u00b0', '\u00b1', '\u00b2', '\u00b3', '\u00b4', '\u00b5', '\u00b6', '\u00b7',
+  '\u00b8', '\u00b9', '\u00ba', '\u00bb', '\u00bc', '\u00bd', '\u00be', '\u00bf',
+  '\u00c0', '\u00c1', '\u00c2', '\u00c3', '\u00c4', '\u00c5', '\u00c6', '\u00c7',
+  '\u00c8', '\u00c9', '\u00ca', '\u00cb', '\u00cc', '\u00cd', '\u00ce', '\u00cf',
+  '\u00d0', '\u00d1', '\u00d2', '\u00d3', '\u00d4', '\u00d5', '\u00d6', '\u00d7',
+  '\u00d8', '\u00d9', '\u00da', '\u00db', '\u00dc', '\u00dd', '\u00de', '\u00df',
+  '\u00e0', '\u00e1', '\u00e2', '\u00e3', '\u00e4', '\u00e5', '\u00e6', '\u00e7',
+  '\u00e8', '\u00e9', '\u00ea', '\u00eb', '\u00ec', '\u00ed', '\u00ee', '\u00ef',
+  '\u00f0', '\u00f1', '\u00f2', '\u00f3', '\u00f4', '\u00f5', '\u00f6', '\u00f7',
+  '\u00f8', '\u00f9', '\u00fa', '\u00fb', '\u00fc', '\u00fd', '\u00fe', '\u00ff'
+)
+
+assert len(_pdfDocEncoding) == 256
+
+_pdfDocEncoding_rev = {}
+for i in range(256):
+    char = _pdfDocEncoding[i]
+    if char == "\u0000":
+        continue
+    assert char not in _pdfDocEncoding_rev
+    _pdfDocEncoding_rev[char] = i
 
