@@ -232,6 +232,11 @@ class NumberObject(int, PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
+##
+# An abstract class that serves as a base class for ByteStringObject and
+# TextStringObject.  An __new__ function delegates creation to the correct
+# byte/text type depending on the input, so a direct instance of StringObject
+# itself will never be created.
 class StringObject(PdfObject):
     def __new__(cls, string):
         if isinstance(string, unicode):
@@ -333,11 +338,21 @@ class StringObject(PdfObject):
     readFromStream = staticmethod(readFromStream)
 
 
+##
+# Represents a string object where the text encoding could not be determined.
+# This occurs quite often, as the PDF spec doesn't provide an alternate way to
+# represent strings -- for example, the encryption data stored in files (like
+# /O) is clearly not text, but is still stored in a "String" object.
 class ByteStringObject(str, StringObject):
     def writeToStream(self, stream, encryption_key):
         StringObject.writeToStream(self, stream, encryption_key)
 
 
+##
+# Represents a string object that has been decoded into a real unicode string.
+# If read from a PDF document, this string appeared to match the
+# PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
+# occur.
 class TextStringObject(unicode, StringObject):
     def writeToStream(self, stream, encryption_key):
         # Try to write the string out as a PDFDocEncoding encoded string.  It's

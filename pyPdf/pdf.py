@@ -1011,7 +1011,7 @@ class PageObject(DictionaryObject):
     # <p>
     # Stability: Added in v1.7, will exist for all future v1.x releases.  May
     # be overhauled to provide more ordered text in the future.
-    # @return a string object
+    # @return a unicode string object
     def extractText(self):
         text = u""
         content = self["/Contents"].getObject()
