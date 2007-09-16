@@ -1272,7 +1272,7 @@ class Destination(DictionaryObject):
             raise PdfReadError("Unknown Destination Type: %s" % type)
           
     def setTitle(self, title):
-        self["/Title"] = title.strip(b" ")
+        self["/Title"] = title.strip(" ")
 
     ##
     # Read-write property accessing the destination title.
