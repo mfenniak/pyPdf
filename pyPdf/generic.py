@@ -240,7 +240,15 @@ class StringObject(PdfObject):
             if string.startswith(codecs.BOM_UTF16_BE):
                 return TextStringObject(string.decode("utf-16"))
             else:
-                return ByteStringObject(string)
+                # This is probably a big performance hit here, but we need to
+                # convert string objects into the text/unicode-aware version if
+                # possible... and the only way to check if that's possible is
+                # to try.  Some strings are strings, some are just byte arrays.
+                try:
+                    uni = decode_pdfdocencoding(string)
+                    return TextStringObject(uni)
+                except UnicodeDecodeError:
+                    return ByteStringObject(string)
         else:
             raise TypeError("StringObject.__new__ should have str or unicode arg")
 
@@ -332,7 +340,13 @@ class ByteStringObject(str, StringObject):
 
 class TextStringObject(unicode, StringObject):
     def writeToStream(self, stream, encryption_key):
-        bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
+        # Try to write the string out as a PDFDocEncoding encoded string.  It's
+        # nicer to look at in the PDF file.  Sadly, we take a performance hit
+        # here for trying...
+        try:
+            bytearr = encode_pdfdocencoding(self)
+        except UnicodeEncodeError:
+            bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
         StringObject.writeToStream(bytearr, stream, encryption_key)
 
 
@@ -583,4 +597,70 @@ class RectangleObject(ArrayObject):
     lowerRight = property(getLowerRight, setLowerRight, None, None)
     upperLeft = property(getUpperLeft, setUpperLeft, None, None)
     upperRight = property(getUpperRight, setUpperRight, None, None)
+
+
+def encode_pdfdocencoding(unicode_string):
+    retval = ''
+    for c in unicode_string:
+        try:
+            retval += chr(_pdfDocEncoding_rev[c])
+        except KeyError:
+            raise UnicodeEncodeError("pdfdocencoding", c, -1, -1,
+                    "does not exist in translation table")
+    return retval
+
+def decode_pdfdocencoding(byte_array):
+    retval = u''
+    for b in byte_array:
+        c = _pdfDocEncoding[ord(b)]
+        if c == u'\u0000':
+            raise UnicodeDecodeError("pdfdocencoding", b, -1, -1,
+                    "does not exist in translation table")
+        retval += c
+    return retval
+
+_pdfDocEncoding = (
+  u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000',
+  u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000',
+  u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000', u'\u0000',
+  u'\u02d8', u'\u02c7', u'\u02c6', u'\u02d9', u'\u02dd', u'\u02db', u'\u02da', u'\u02dc',
+  u'\u0020', u'\u0021', u'\u0022', u'\u0023', u'\u0024', u'\u0025', u'\u0026', u'\u0027',
+  u'\u0028', u'\u0029', u'\u002a', u'\u002b', u'\u002c', u'\u002d', u'\u002e', u'\u002f',
+  u'\u0030', u'\u0031', u'\u0032', u'\u0033', u'\u0034', u'\u0035', u'\u0036', u'\u0037',
+  u'\u0038', u'\u0039', u'\u003a', u'\u003b', u'\u003c', u'\u003d', u'\u003e', u'\u003f',
+  u'\u0040', u'\u0041', u'\u0042', u'\u0043', u'\u0044', u'\u0045', u'\u0046', u'\u0047',
+  u'\u0048', u'\u0049', u'\u004a', u'\u004b', u'\u004c', u'\u004d', u'\u004e', u'\u004f',
+  u'\u0050', u'\u0051', u'\u0052', u'\u0053', u'\u0054', u'\u0055', u'\u0056', u'\u0057',
+  u'\u0058', u'\u0059', u'\u005a', u'\u005b', u'\u005c', u'\u005d', u'\u005e', u'\u005f',
+  u'\u0060', u'\u0061', u'\u0062', u'\u0063', u'\u0064', u'\u0065', u'\u0066', u'\u0067',
+  u'\u0068', u'\u0069', u'\u006a', u'\u006b', u'\u006c', u'\u006d', u'\u006e', u'\u006f',
+  u'\u0070', u'\u0071', u'\u0072', u'\u0073', u'\u0074', u'\u0075', u'\u0076', u'\u0077',
+  u'\u0078', u'\u0079', u'\u007a', u'\u007b', u'\u007c', u'\u007d', u'\u007e', u'\u0000',
+  u'\u2022', u'\u2020', u'\u2021', u'\u2026', u'\u2014', u'\u2013', u'\u0192', u'\u2044',
+  u'\u2039', u'\u203a', u'\u2212', u'\u2030', u'\u201e', u'\u201c', u'\u201d', u'\u2018',
+  u'\u2019', u'\u201a', u'\u2122', u'\ufb01', u'\ufb02', u'\u0141', u'\u0152', u'\u0160',
+  u'\u0178', u'\u017d', u'\u0131', u'\u0142', u'\u0153', u'\u0161', u'\u017e', u'\u0000',
+  u'\u20ac', u'\u00a1', u'\u00a2', u'\u00a3', u'\u00a4', u'\u00a5', u'\u00a6', u'\u00a7',
+  u'\u00a8', u'\u00a9', u'\u00aa', u'\u00ab', u'\u00ac', u'\u0000', u'\u00ae', u'\u00af',
+  u'\u00b0', u'\u00b1', u'\u00b2', u'\u00b3', u'\u00b4', u'\u00b5', u'\u00b6', u'\u00b7',
+  u'\u00b8', u'\u00b9', u'\u00ba', u'\u00bb', u'\u00bc', u'\u00bd', u'\u00be', u'\u00bf',
+  u'\u00c0', u'\u00c1', u'\u00c2', u'\u00c3', u'\u00c4', u'\u00c5', u'\u00c6', u'\u00c7',
+  u'\u00c8', u'\u00c9', u'\u00ca', u'\u00cb', u'\u00cc', u'\u00cd', u'\u00ce', u'\u00cf',
+  u'\u00d0', u'\u00d1', u'\u00d2', u'\u00d3', u'\u00d4', u'\u00d5', u'\u00d6', u'\u00d7',
+  u'\u00d8', u'\u00d9', u'\u00da', u'\u00db', u'\u00dc', u'\u00dd', u'\u00de', u'\u00df',
+  u'\u00e0', u'\u00e1', u'\u00e2', u'\u00e3', u'\u00e4', u'\u00e5', u'\u00e6', u'\u00e7',
+  u'\u00e8', u'\u00e9', u'\u00ea', u'\u00eb', u'\u00ec', u'\u00ed', u'\u00ee', u'\u00ef',
+  u'\u00f0', u'\u00f1', u'\u00f2', u'\u00f3', u'\u00f4', u'\u00f5', u'\u00f6', u'\u00f7',
+  u'\u00f8', u'\u00f9', u'\u00fa', u'\u00fb', u'\u00fc', u'\u00fd', u'\u00fe', u'\u00ff'
+)
+
+assert len(_pdfDocEncoding) == 256
+
+_pdfDocEncoding_rev = {}
+for i in xrange(256):
+    char = _pdfDocEncoding[i]
+    if char == u"\u0000":
+        continue
+    assert char not in _pdfDocEncoding_rev
+    _pdfDocEncoding_rev[char] = i
 

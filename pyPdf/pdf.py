@@ -1013,24 +1013,31 @@ class PageObject(DictionaryObject):
     # be overhauled to provide more ordered text in the future.
     # @return a string object
     def extractText(self):
-        text = ""
+        text = u""
         content = self["/Contents"].getObject()
         if not isinstance(content, ContentStream):
             content = ContentStream(content, self.pdf)
+        # Note: we check all strings are TextStringObjects.  ByteStringObjects
+        # are strings where the byte->string encoding was unknown, so adding
+        # them to the text here would be gibberish.
         for operands,operator in content.operations:
             if operator == "Tj":
-                text += operands[0]
+                _text = operands[0]
+                if isinstance(_text, TextStringObject):
+                    text += _text
             elif operator == "T*":
                 text += "\n"
             elif operator == "'":
                 text += "\n"
                 text += operands[0]
             elif operator == '"':
-                text += "\n"
-                text += operands[2]
+                _text = operands[2]
+                if isinstance(_text, TextStringObject):
+                    text += "\n"
+                    text += _text
             elif operator == "TJ":
                 for i in operands[0]:
-                    if isinstance(i, StringObject):
+                    if isinstance(i, TextStringObject):
                         text += i
         return text
 
