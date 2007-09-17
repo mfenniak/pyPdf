@@ -46,6 +46,7 @@ except ImportError:
 
 import filters
 import utils
+import warnings
 from generic import *
 from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
 from sets import ImmutableSet
@@ -70,7 +71,7 @@ class PdfFileWriter(object):
         # info object
         info = DictionaryObject()
         info.update({
-                NameObject("/Producer"): StringObject(u"Python PDF Library - http://pybrary.net/pyPdf/")
+                NameObject("/Producer"): createStringObject(u"Python PDF Library - http://pybrary.net/pyPdf/")
                 })
         self._info = self._addObject(info)
 
@@ -130,10 +131,10 @@ class PdfFileWriter(object):
             keylen = 40 / 8
         # permit everything:
         P = -1
-        O = StringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
+        O = ByteStringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
         ID_1 = md5.new(repr(time.time())).digest()
         ID_2 = md5.new(repr(random.random())).digest()
-        self._ID = ArrayObject((StringObject(ID_1), StringObject(ID_2)))
+        self._ID = ArrayObject((ByteStringObject(ID_1), ByteStringObject(ID_2)))
         if rev == 2:
             U, key = _alg34(user_pwd, O, P, ID_1)
         else:
@@ -145,8 +146,8 @@ class PdfFileWriter(object):
         if V == 2:
             encrypt[NameObject("/Length")] = NumberObject(keylen * 8)
         encrypt[NameObject("/R")] = NumberObject(rev)
-        encrypt[NameObject("/O")] = StringObject(O)
-        encrypt[NameObject("/U")] = StringObject(U)
+        encrypt[NameObject("/O")] = ByteStringObject(O)
+        encrypt[NameObject("/U")] = ByteStringObject(U)
         encrypt[NameObject("/P")] = NumberObject(P)
         self._encrypt = self._addObject(encrypt)
         self._encrypt_key = key
@@ -214,8 +215,6 @@ class PdfFileWriter(object):
             for key, value in data.items():
                 origvalue = value
                 value = self._sweepIndirectReferences(externMap, value)
-                if value == None:
-                    print objects, value, origvalue
                 if isinstance(value, StreamObject):
                     # a dictionary value is a stream.  streams must be indirect
                     # objects, so we need to change this value.
@@ -571,8 +570,10 @@ class PdfFileReader(object):
         return retval
 
     def _decryptObject(self, obj, key):
-        if isinstance(obj, StringObject):
-            obj = StringObject(utils.RC4_encrypt(key, obj))
+        if isinstance(obj, ByteStringObject):
+            obj = createStringObject(utils.RC4_encrypt(key, obj))
+        elif isinstance(obj, TextStringObject):
+            obj = createStringObject(utils.RC4_encrypt(key, encode_pdfdocencoding(obj)))
         elif isinstance(obj, StreamObject):
             obj._data = utils.RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
@@ -827,6 +828,10 @@ class PdfFileReader(object):
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
         real_U = self.safeGetObject(encrypt['/U'])
+        if isinstance(real_U, TextStringObject):
+            # Uh, really should be a byte string.
+            warnings.warn("Should be a byte string, but a unicode string arrived for encyption.")
+            real_U = encode_pdfdocencoding(real_U)
         return U == real_U, key
 
     def getIsEncrypted(self):

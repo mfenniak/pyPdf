@@ -49,7 +49,7 @@ def readObject(stream, pdf):
         return BooleanObject.readFromStream(stream)
     elif tok == '(':
         # string object
-        return StringObject.readFromStream(stream)
+        return readStringFromStream(stream)
     elif tok == '/':
         # name object
         return NameObject.readFromStream(stream)
@@ -66,7 +66,7 @@ def readObject(stream, pdf):
         if peek == '<<':
             return DictionaryObject.readFromStream(stream, pdf)
         else:
-            return StringObject.readHexStringFromStream(stream)
+            return readHexStringFromStream(stream)
     elif tok == '%':
         # comment
         while tok not in ('\r', '\n'):
@@ -196,11 +196,8 @@ class IndirectObject(PdfObject):
                 break
             generation += tok
         r = stream.read(1)
-        #if r != "R":
-        #    stream.seek(-20, 1)
-        #    print idnum, generation
-        #    print repr(stream.read(40))
-        assert r == "R"
+        if r != "R":
+            raise utils.PdfReadError("error reading indirect object reference")
         return IndirectObject(int(idnum), int(generation), pdf)
     readFromStream = staticmethod(readFromStream)
 
@@ -233,109 +230,94 @@ class NumberObject(int, PdfObject):
 
 
 ##
-# An abstract class that serves as a base class for ByteStringObject and
-# TextStringObject.  An __new__ function delegates creation to the correct
-# byte/text type depending on the input, so a direct instance of StringObject
-# itself will never be created.
-class StringObject(PdfObject):
-    def __new__(cls, string):
-        if isinstance(string, unicode):
-            return TextStringObject(string)
-        elif isinstance(string, str):
-            if string.startswith(codecs.BOM_UTF16_BE):
-                return TextStringObject(string.decode("utf-16"))
-            else:
-                # This is probably a big performance hit here, but we need to
-                # convert string objects into the text/unicode-aware version if
-                # possible... and the only way to check if that's possible is
-                # to try.  Some strings are strings, some are just byte arrays.
-                try:
-                    uni = decode_pdfdocencoding(string)
-                    return TextStringObject(uni)
-                except UnicodeDecodeError:
-                    return ByteStringObject(string)
+# Given a string (either a "str" or "unicode"), create a ByteStringObject or a
+# TextStringObject to represent the string.
+def createStringObject(string):
+    if isinstance(string, unicode):
+        return TextStringObject(string)
+    elif isinstance(string, str):
+        if string.startswith(codecs.BOM_UTF16_BE):
+            return TextStringObject(string.decode("utf-16"))
         else:
-            raise TypeError("StringObject.__new__ should have str or unicode arg")
+            # This is probably a big performance hit here, but we need to
+            # convert string objects into the text/unicode-aware version if
+            # possible... and the only way to check if that's possible is
+            # to try.  Some strings are strings, some are just byte arrays.
+            try:
+                uni = decode_pdfdocencoding(string)
+                return TextStringObject(uni)
+            except UnicodeDecodeError:
+                return ByteStringObject(string)
+    else:
+        raise TypeError("createStringObject should have str or unicode arg")
 
-    def writeToStream(bytearr, stream, encryption_key):
-        if encryption_key:
-            bytearr = RC4_encrypt(encryption_key, bytearr)
-        stream.write("(")
-        for c in bytearr:
-            if not c.isalnum() and c != ' ':
-                stream.write("\\%03o" % ord(c))
-            else:
-                stream.write(c)
-        stream.write(")")
-    writeToStream = staticmethod(writeToStream)
 
-    def readHexStringFromStream(stream):
-        stream.read(1)
-        txt = ""
-        x = ""
-        while True:
-            tok = readNonWhitespace(stream)
-            if tok == ">":
-                break
-            x += tok
-            if len(x) == 2:
-                txt += chr(int(x, base=16))
-                x = ""
-        if len(x) == 1:
-            x += "0"
+def readHexStringFromStream(stream):
+    stream.read(1)
+    txt = ""
+    x = ""
+    while True:
+        tok = readNonWhitespace(stream)
+        if tok == ">":
+            break
+        x += tok
         if len(x) == 2:
             txt += chr(int(x, base=16))
-        return StringObject(txt)
-    readHexStringFromStream = staticmethod(readHexStringFromStream)
+            x = ""
+    if len(x) == 1:
+        x += "0"
+    if len(x) == 2:
+        txt += chr(int(x, base=16))
+    return createStringObject(txt)
 
-    def readFromStream(stream):
+
+def readStringFromStream(stream):
+    tok = stream.read(1)
+    parens = 1
+    txt = ""
+    while True:
         tok = stream.read(1)
-        parens = 1
-        txt = ""
-        while True:
+        if tok == "(":
+            parens += 1
+        elif tok == ")":
+            parens -= 1
+            if parens == 0:
+                break
+        elif tok == "\\":
             tok = stream.read(1)
-            if tok == "(":
-                parens += 1
+            if tok == "n":
+                tok = "\n"
+            elif tok == "r":
+                tok = "\r"
+            elif tok == "t":
+                tok = "\t"
+            elif tok == "b":
+                tok == "\b"
+            elif tok == "f":
+                tok = "\f"
+            elif tok == "(":
+                tok = "("
             elif tok == ")":
-                parens -= 1
-                if parens == 0:
-                    break
+                tok = ")"
             elif tok == "\\":
+                tok = "\\"
+            elif tok.isdigit():
+                tok += stream.read(2)
+                tok = chr(int(tok, base=8))
+            elif tok in "\n\r":
+                # This case is  hit when a backslash followed by a line
+                # break occurs.  If it's a multi-char EOL, consume the
+                # second character:
                 tok = stream.read(1)
-                if tok == "n":
-                    tok = "\n"
-                elif tok == "r":
-                    tok = "\r"
-                elif tok == "t":
-                    tok = "\t"
-                elif tok == "b":
-                    tok == "\b"
-                elif tok == "f":
-                    tok = "\f"
-                elif tok == "(":
-                    tok = "("
-                elif tok == ")":
-                    tok = ")"
-                elif tok == "\\":
-                    tok = "\\"
-                elif tok.isdigit():
-                    tok += stream.read(2)
-                    tok = chr(int(tok, base=8))
-                elif tok in "\n\r":
-                    # This case is  hit when a backslash followed by a line
-                    # break occurs.  If it's a multi-char EOL, consume the
-                    # second character:
-                    tok = stream.read(1)
-                    if not tok in "\n\r":
-                        stream.seek(-1, 1)
-                    # Then don't add anything to the actual string, since this
-                    # line break was escaped:
-                    tok = ''
-                else:
-                    raise utils.PdfReadError("Unexpected escaped string")
-            txt += tok
-        return StringObject(txt)
-    readFromStream = staticmethod(readFromStream)
+                if not tok in "\n\r":
+                    stream.seek(-1, 1)
+                # Then don't add anything to the actual string, since this
+                # line break was escaped:
+                tok = ''
+            else:
+                raise utils.PdfReadError("Unexpected escaped string")
+        txt += tok
+    return createStringObject(txt)
 
 
 ##
@@ -343,9 +325,14 @@ class StringObject(PdfObject):
 # This occurs quite often, as the PDF spec doesn't provide an alternate way to
 # represent strings -- for example, the encryption data stored in files (like
 # /O) is clearly not text, but is still stored in a "String" object.
-class ByteStringObject(str, StringObject):
+class ByteStringObject(str, PdfObject):
     def writeToStream(self, stream, encryption_key):
-        StringObject.writeToStream(self, stream, encryption_key)
+        bytearr = self
+        if encryption_key:
+            bytearr = RC4_encrypt(encryption_key, bytearr)
+        stream.write("<")
+        stream.write(bytearr.encode("hex"))
+        stream.write(">")
 
 
 ##
@@ -353,7 +340,7 @@ class ByteStringObject(str, StringObject):
 # If read from a PDF document, this string appeared to match the
 # PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
 # occur.
-class TextStringObject(unicode, StringObject):
+class TextStringObject(unicode, PdfObject):
     def writeToStream(self, stream, encryption_key):
         # Try to write the string out as a PDFDocEncoding encoded string.  It's
         # nicer to look at in the PDF file.  Sadly, we take a performance hit
@@ -362,7 +349,18 @@ class TextStringObject(unicode, StringObject):
             bytearr = encode_pdfdocencoding(self)
         except UnicodeEncodeError:
             bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
-        StringObject.writeToStream(bytearr, stream, encryption_key)
+        if encryption_key:
+            bytearr = RC4_encrypt(encryption_key, bytearr)
+            obj = ByteStringObject(bytearr)
+            obj.writeToStream(stream, None)
+        else:
+            stream.write("(")
+            for c in bytearr:
+                if not c.isalnum() and c != ' ':
+                    stream.write("\\%03o" % ord(c))
+                else:
+                    stream.write(c)
+            stream.write(")")
 
 
 class NameObject(str, PdfObject):
