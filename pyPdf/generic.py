@@ -329,6 +329,10 @@ def readStringFromStream(stream):
 # represent strings -- for example, the encryption data stored in files (like
 # /O) is clearly not text, but is still stored in a "String" object.
 class ByteStringObject(str, PdfObject):
+
+    ##
+    # For compatibility with TextStringObject.original_bytes.  This method
+    # returns self.
     original_bytes = property(lambda self: self)
 
     def writeToStream(self, stream, encryption_key):
@@ -351,6 +355,11 @@ class TextStringObject(unicode, PdfObject):
         self.autodetect_utf16 = False
         self.autodetect_pdfdocencoding = False
     
+    ##
+    # It is occasionally possible that a text string object gets created where
+    # a byte string object was expected due to the autodetection mechanism --
+    # if that occurs, this "original_bytes" property can be used to
+    # back-calculate what the original encoded bytes were.
     original_bytes = property(lambda self: self.get_original_bytes())
 
     def get_original_bytes(self):
