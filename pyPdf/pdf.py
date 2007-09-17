@@ -567,7 +567,7 @@ class PdfFileReader(object):
 
     def _decryptObject(self, obj, key):
         if isinstance(obj, ByteStringObject) or isinstance(obj, TextStringObject):
-            obj = createStringObject(utils.RC4_encrypt(key, obj.original_bytes))
+            obj = createStringObject(RC4_encrypt(key, obj.original_bytes))
         elif isinstance(obj, StreamObject):
             obj._data = RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
