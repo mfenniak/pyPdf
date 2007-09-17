@@ -48,7 +48,7 @@ def readObject(stream, pdf):
         return BooleanObject.readFromStream(stream)
     elif tok == b'(':
         # string object
-        return StringObject.readFromStream(stream)
+        return readStringFromStream(stream)
     elif tok == b'/':
         # name object
         return NameObject.readFromStream(stream)
@@ -65,7 +65,7 @@ def readObject(stream, pdf):
         if peek == b'<<':
             return DictionaryObject.readFromStream(stream, pdf)
         else:
-            return StringObject.readHexStringFromStream(stream)
+            return readHexStringFromStream(stream)
     elif tok == b'%':
         # comment
         while tok not in (b'\r', b'\n'):
@@ -196,11 +196,8 @@ class IndirectObject(PdfObject):
                 break
             generation += tok
         r = stream.read(1)
-        #if r != "R":
-        #    stream.seek(-20, 1)
-        #    print idnum, generation
-        #    print repr(stream.read(40))
-        assert r == b"R"
+        if r != b"R":
+            raise utils.PdfReadError("error reading indirect object reference")
         return IndirectObject(int(idnum), int(generation), pdf)
     readFromStream = staticmethod(readFromStream)
 
@@ -230,111 +227,99 @@ class NumberObject(int, PdfObject):
 
 
 ##
-# An abstract class that serves as a base class for ByteStringObject and
-# TextStringObject.  An __new__ function delegates creation to the correct
-# byte/text type depending on the input, so a direct instance of StringObject
-# itself will never be created.
-class StringObject(PdfObject):
-    def __new__(cls, string):
-        if isinstance(string, str):
-            return TextStringObject(string)
-        elif isinstance(string, bytes):
-            if string.startswith(codecs.BOM_UTF16_BE):
-                return TextStringObject(string.decode("utf-16"))
-            else:
-                # This is probably a big performance hit here, but we need to
-                # convert string objects into the text/unicode-aware version if
-                # possible... and the only way to check if that's possible is
-                # to try.  Some strings are strings, some are just byte arrays.
-                try:
-                    uni = decode_pdfdocencoding(string)
-                    return TextStringObject(uni)
-                except UnicodeDecodeError:
-                    return ByteStringObject(string)
+# Given a string (either a "str" or "unicode"), create a ByteStringObject or a
+# TextStringObject to represent the string.
+def createStringObject(string):
+    if isinstance(string, str):
+        return TextStringObject(string)
+    elif isinstance(string, bytes):
+        if string.startswith(codecs.BOM_UTF16_BE):
+            retval = TextStringObject(string.decode("utf-16"))
+            retval.autodetect_utf16 = True
+            return retval
         else:
-            raise TypeError("StringObject.__new__ should have str or unicode arg")
+            # This is probably a big performance hit here, but we need to
+            # convert string objects into the text/unicode-aware version if
+            # possible... and the only way to check if that's possible is
+            # to try.  Some strings are strings, some are just byte arrays.
+            try:
+                retval = TextStringObject(decode_pdfdocencoding(string))
+                retval.autodetect_pdfdocencoding = True
+                return retval
+            except UnicodeDecodeError:
+                return ByteStringObject(string)
+    else:
+        raise TypeError("createStringObject should have str or unicode arg")
 
-    def writeToStream(bytearr, stream, encryption_key):
-        if encryption_key:
-            bytearr = RC4_encrypt(encryption_key, bytearr)
-        stream.write(b"(")
-        for c in bytearr:
-            if (c == 32) or (65 <= c <= 90) or (97 <= c <= 122):
-                stream.write(bytes((c,)))
-            else:
-                stream.write(("\\%03o" % c).encode("ascii"))
-        stream.write(b")")
-    writeToStream = staticmethod(writeToStream)
 
-    def readHexStringFromStream(stream):
-        stream.read(1)
-        txt = b""
-        x = b""
-        while True:
-            tok = readNonWhitespace(stream)
-            if tok == b">":
-                break
-            x += tok
-            if len(x) == 2:
-                txt += bytes.fromhex(x)
-                x = b""
-        if len(x) == 1:
-            x += b"0"
+def readHexStringFromStream(stream):
+    stream.read(1)
+    txt = b""
+    x = b""
+    while True:
+        tok = readNonWhitespace(stream)
+        if tok == b">":
+            break
+        x += tok
         if len(x) == 2:
             txt += bytes.fromhex(x)
-        return StringObject(txt)
-    readHexStringFromStream = staticmethod(readHexStringFromStream)
+            x = b""
+    if len(x) == 1:
+        x += b"0"
+    if len(x) == 2:
+        txt += bytes.fromhex(x)
+    return createStringObject(txt)
 
-    def readFromStream(stream):
+
+def readStringFromStream(stream):
+    tok = stream.read(1)
+    parens = 1
+    txt = b""
+    while True:
         tok = stream.read(1)
-        parens = 1
-        txt = b""
-        while True:
+        if tok == b"(":
+            parens += 1
+        elif tok == b")":
+            parens -= 1
+            if parens == 0:
+                break
+        elif tok == b"\\":
             tok = stream.read(1)
-            if tok == b"(":
-                parens += 1
+            if tok == b"n":
+                tok = b"\n"
+            elif tok == b"r":
+                tok = b"\r"
+            elif tok == b"t":
+                tok = "\t"
+            elif tok == b"b":
+                tok = b"\b"
+            elif tok == b"f":
+                tok = b"\f"
+            elif tok == b"(":
+                tok = b"("
             elif tok == b")":
-                parens -= 1
-                if parens == 0:
-                    break
+                tok = b")"
             elif tok == b"\\":
+                tok = b"\\"
+            elif tok in b"0123456789":
+                # Note: PDF spec says that octal characters don't need to
+                # provide 3 numbers.  Not supported here.
+                tok += stream.read(2)
+                tok = bytes([int(tok, base=8)])
+            elif tok in b"\n\r":
+                # This case is  hit when a backslash followed by a line
+                # break occurs.  If it's a multi-char EOL, consume the
+                # second character:
                 tok = stream.read(1)
-                if tok == b"n":
-                    tok = b"\n"
-                elif tok == b"r":
-                    tok = b"\r"
-                elif tok == b"t":
-                    tok = "\t"
-                elif tok == b"b":
-                    tok = b"\b"
-                elif tok == b"f":
-                    tok = b"\f"
-                elif tok == b"(":
-                    tok = b"("
-                elif tok == b")":
-                    tok = b")"
-                elif tok == b"\\":
-                    tok = b"\\"
-                elif tok in b"0123456789":
-                    # Note: PDF spec says that octal characters don't need to
-                    # provide 3 numbers.  Not supported here.
-                    tok += stream.read(2)
-                    tok = bytes([int(tok, base=8)])
-                elif tok in b"\n\r":
-                    # This case is  hit when a backslash followed by a line
-                    # break occurs.  If it's a multi-char EOL, consume the
-                    # second character:
-                    tok = stream.read(1)
-                    if not tok in b"\n\r":
-                        stream.seek(-1, 1)
-                    # Then don't add anything to the actual string, since this
-                    # line break was escaped:
-                    tok = b''
-                else:
-                    raise utils.PdfReadError("Unexpected escaped string")
-            txt += tok
-        return StringObject(txt)
-    readFromStream = staticmethod(readFromStream)
+                if not tok in b"\n\r":
+                    stream.seek(-1, 1)
+                # Then don't add anything to the actual string, since this
+                # line break was escaped:
+                tok = b''
+            else:
+                raise utils.PdfReadError("Unexpected escaped string")
+        txt += tok
+    return createStringObject(txt)
 
 
 ##
@@ -342,9 +327,21 @@ class StringObject(PdfObject):
 # This occurs quite often, as the PDF spec doesn't provide an alternate way to
 # represent strings -- for example, the encryption data stored in files (like
 # /O) is clearly not text, but is still stored in a "String" object.
-class ByteStringObject(bytes, StringObject):
+class ByteStringObject(bytes, PdfObject):
+
+    ##
+    # For compatibility with TextStringObject.original_bytes.  This method
+    # returns self.
+    original_bytes = property(lambda self: self)
+
     def writeToStream(self, stream, encryption_key):
-        StringObject.writeToStream(self, stream, encryption_key)
+        bytearr = self
+        if encryption_key:
+            bytearr = RC4_encrypt(encryption_key, bytearr)
+        stream.write(b"<")
+        for b in self:
+            stream.write(("%.2x" % b).encode("ascii"))
+        stream.write(b">")
 
 
 ##
@@ -352,7 +349,32 @@ class ByteStringObject(bytes, StringObject):
 # If read from a PDF document, this string appeared to match the
 # PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
 # occur.
-class TextStringObject(str, StringObject):
+class TextStringObject(str, PdfObject):
+    def __init__(self, *args, **kwargs):
+        str.__init__(self, *args, **kwargs)
+        self.autodetect_utf16 = False
+        self.autodetect_pdfdocencoding = False
+    
+    ##
+    # It is occasionally possible that a text string object gets created where
+    # a byte string object was expected due to the autodetection mechanism --
+    # if that occurs, this "original_bytes" property can be used to
+    # back-calculate what the original encoded bytes were.
+    original_bytes = property(lambda self: self.get_original_bytes())
+
+    def get_original_bytes(self):
+        # We're a text string object, but the library is trying to get our raw
+        # bytes.  This can happen if we auto-detected this string as text, but
+        # we were wrong.  It's pretty common.  Return the original bytes that
+        # would have been used to create this object, based upon the autodetect
+        # method.
+        if self.autodetect_utf16:
+            return codecs.BOM_UTF16_BE + self.encode("utf-16be")
+        elif self.autodetect_pdfdocencoding:
+            return encode_pdfdocencoding(self)
+        else:
+            raise Exception("no information about original bytes")
+
     def writeToStream(self, stream, encryption_key):
         # Try to write the string out as a PDFDocEncoding encoded string.  It's
         # nicer to look at in the PDF file.  Sadly, we take a performance hit
@@ -361,7 +383,18 @@ class TextStringObject(str, StringObject):
             bytearr = encode_pdfdocencoding(self)
         except UnicodeEncodeError:
             bytearr = codecs.BOM_UTF16_BE + self.encode("utf-16be")
-        StringObject.writeToStream(bytearr, stream, encryption_key)
+        if encryption_key:
+            bytearr = RC4_encrypt(encryption_key, bytearr)
+            obj = ByteStringObject(bytearr)
+            obj.writeToStream(stream, None)
+        else:
+            stream.write(b"(")
+            for c in bytearr:
+                if (c == 32) or (65 <= c <= 90) or (97 <= c <= 122):
+                    stream.write(bytes((c,)))
+                else:
+                    stream.write(("\\%03o" % c).encode("ascii"))
+            stream.write(b")")
 
 
 class NameObject(str, PdfObject):

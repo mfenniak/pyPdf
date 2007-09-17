@@ -42,8 +42,8 @@ import struct
 from io import BytesIO
 
 from .generic import (readObject, DictionaryObject, DecodedStreamObject,
-        NameObject, NumberObject, ArrayObject, IndirectObject, StringObject,
-        StreamObject, NullObject, TextStringObject)
+        NameObject, NumberObject, ArrayObject, IndirectObject, ByteStringObject,
+        StreamObject, NullObject, TextStringObject, createStringObject)
 from .utils import (readNonWhitespace, readUntilWhitespace,
         ConvertFunctionsToVirtualList, PdfReadError, RC4_encrypt)
 
@@ -67,7 +67,7 @@ class PdfFileWriter(object):
         # info object
         info = DictionaryObject()
         info.update({
-                NameObject("/Producer"): StringObject("Python PDF Library - http://pybrary.net/pyPdf/")
+                NameObject("/Producer"): createStringObject("Python PDF Library - http://pybrary.net/pyPdf/")
                 })
         self._info = self._addObject(info)
 
@@ -127,10 +127,10 @@ class PdfFileWriter(object):
             keylen = 40 // 8
         # permit everything:
         P = -1
-        O = StringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
+        O = ByteStringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
         ID_1 = hashlib.md5(repr(time.time()).encode("ascii")).digest()
         ID_2 = hashlib.md5(repr(random.random()).encode("ascii")).digest()
-        self._ID = ArrayObject((StringObject(ID_1), StringObject(ID_2)))
+        self._ID = ArrayObject((ByteStringObject(ID_1), ByteStringObject(ID_2)))
         if rev == 2:
             U, key = _alg34(user_pwd, O, P, ID_1)
         else:
@@ -142,8 +142,8 @@ class PdfFileWriter(object):
         if V == 2:
             encrypt[NameObject("/Length")] = NumberObject(keylen * 8)
         encrypt[NameObject("/R")] = NumberObject(rev)
-        encrypt[NameObject("/O")] = O
-        encrypt[NameObject("/U")] = StringObject(U)
+        encrypt[NameObject("/O")] = ByteStringObject(O)
+        encrypt[NameObject("/U")] = ByteStringObject(U)
         encrypt[NameObject("/P")] = NumberObject(P)
         self._encrypt = self._addObject(encrypt)
         self._encrypt_key = key
@@ -211,8 +211,6 @@ class PdfFileWriter(object):
             for key, value in list(data.items()):
                 origvalue = value
                 value = self._sweepIndirectReferences(externMap, value)
-                if value == None:
-                    print(objects, value, origvalue)
                 if isinstance(value, StreamObject):
                     # a dictionary value is a stream.  streams must be indirect
                     # objects, so we need to change this value.
@@ -568,8 +566,8 @@ class PdfFileReader(object):
         return retval
 
     def _decryptObject(self, obj, key):
-        if isinstance(obj, StringObject):
-            obj = StringObject(RC4_encrypt(key, obj))
+        if isinstance(obj, ByteStringObject) or isinstance(obj, TextStringObject):
+            obj = createStringObject(utils.RC4_encrypt(key, obj.original_bytes))
         elif isinstance(obj, StreamObject):
             obj._data = RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
@@ -812,7 +810,7 @@ class PdfFileReader(object):
     def _authenticateUserPassword(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
         rev = self.safeGetObject(encrypt['/R'])
-        owner_entry = self.safeGetObject(encrypt['/O'])
+        owner_entry = self.safeGetObject(encrypt['/O']).original_bytes
         p_entry = self.safeGetObject(encrypt['/P'])
         id_entry = self.safeGetObject(self.trailer['/ID'])
         id1_entry = self.safeGetObject(id_entry[0])
@@ -823,8 +821,8 @@ class PdfFileReader(object):
                     self.safeGetObject(encrypt["/Length"]) // 8, owner_entry,
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U'])
-        return type(U) == type(real_U) and U == real_U, key
+        real_U = self.safeGetObject(encrypt['/U']).original_bytes
+        return U == real_U, key
 
     def getIsEncrypted(self):
         return "/Encrypt" in self.trailer
