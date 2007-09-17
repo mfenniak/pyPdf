@@ -350,11 +350,9 @@ class ByteStringObject(bytes, PdfObject):
 # PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
 # occur.
 class TextStringObject(str, PdfObject):
-    def __init__(self, *args, **kwargs):
-        str.__init__(self, *args, **kwargs)
-        self.autodetect_utf16 = False
-        self.autodetect_pdfdocencoding = False
-    
+    autodetect_pdfdocencoding = False
+    autodetect_utf16 = False
+
     ##
     # It is occasionally possible that a text string object gets created where
     # a byte string object was expected due to the autodetection mechanism --
