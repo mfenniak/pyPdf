@@ -237,15 +237,18 @@ def createStringObject(string):
         return TextStringObject(string)
     elif isinstance(string, str):
         if string.startswith(codecs.BOM_UTF16_BE):
-            return TextStringObject(string.decode("utf-16"))
+            retval = TextStringObject(string.decode("utf-16"))
+            retval.autodetect_utf16 = True
+            return retval
         else:
             # This is probably a big performance hit here, but we need to
             # convert string objects into the text/unicode-aware version if
             # possible... and the only way to check if that's possible is
             # to try.  Some strings are strings, some are just byte arrays.
             try:
-                uni = decode_pdfdocencoding(string)
-                return TextStringObject(uni)
+                retval = TextStringObject(decode_pdfdocencoding(string))
+                retval.autodetect_pdfdocencoding = True
+                return retval
             except UnicodeDecodeError:
                 return ByteStringObject(string)
     else:
@@ -326,6 +329,8 @@ def readStringFromStream(stream):
 # represent strings -- for example, the encryption data stored in files (like
 # /O) is clearly not text, but is still stored in a "String" object.
 class ByteStringObject(str, PdfObject):
+    original_bytes = property(lambda self: self)
+
     def writeToStream(self, stream, encryption_key):
         bytearr = self
         if encryption_key:
@@ -341,6 +346,26 @@ class ByteStringObject(str, PdfObject):
 # PDFDocEncoding, or contained a UTF-16BE BOM mark to cause UTF-16 decoding to
 # occur.
 class TextStringObject(unicode, PdfObject):
+    def __init__(self, *args, **kwargs):
+        unicode.__init__(self, *args, **kwargs)
+        self.autodetect_utf16 = False
+        self.autodetect_pdfdocencoding = False
+    
+    original_bytes = property(lambda self: self.get_original_bytes())
+
+    def get_original_bytes(self):
+        # We're a text string object, but the library is trying to get our raw
+        # bytes.  This can happen if we auto-detected this string as text, but
+        # we were wrong.  It's pretty common.  Return the original bytes that
+        # would have been used to create this object, based upon the autodetect
+        # method.
+        if self.autodetect_utf16:
+            return codecs.BOM_UTF16_BE + self.encode("utf-16be")
+        elif self.autodetect_pdfdocencoding:
+            return encode_pdfdocencoding(self)
+        else:
+            raise Exception("no information about original bytes")
+
     def writeToStream(self, stream, encryption_key):
         # Try to write the string out as a PDFDocEncoding encoded string.  It's
         # nicer to look at in the PDF file.  Sadly, we take a performance hit

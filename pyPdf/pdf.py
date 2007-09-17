@@ -570,10 +570,8 @@ class PdfFileReader(object):
         return retval
 
     def _decryptObject(self, obj, key):
-        if isinstance(obj, ByteStringObject):
-            obj = createStringObject(utils.RC4_encrypt(key, obj))
-        elif isinstance(obj, TextStringObject):
-            obj = createStringObject(utils.RC4_encrypt(key, encode_pdfdocencoding(obj)))
+        if isinstance(obj, ByteStringObject) or isinstance(obj, TextStringObject):
+            obj = createStringObject(utils.RC4_encrypt(key, obj.original_bytes))
         elif isinstance(obj, StreamObject):
             obj._data = utils.RC4_encrypt(key, obj._data)
         elif isinstance(obj, DictionaryObject):
@@ -816,7 +814,7 @@ class PdfFileReader(object):
     def _authenticateUserPassword(self, password):
         encrypt = self.safeGetObject(self.trailer['/Encrypt'])
         rev = self.safeGetObject(encrypt['/R'])
-        owner_entry = self.safeGetObject(encrypt['/O'])
+        owner_entry = self.safeGetObject(encrypt['/O']).original_bytes
         p_entry = self.safeGetObject(encrypt['/P'])
         id_entry = self.safeGetObject(self.trailer['/ID'])
         id1_entry = self.safeGetObject(id_entry[0])
@@ -827,11 +825,7 @@ class PdfFileReader(object):
                     self.safeGetObject(encrypt["/Length"]) / 8, owner_entry,
                     p_entry, id1_entry,
                     self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U'])
-        if isinstance(real_U, TextStringObject):
-            # Uh, really should be a byte string.
-            warnings.warn("Should be a byte string, but a unicode string arrived for encyption.")
-            real_U = encode_pdfdocencoding(real_U)
+        real_U = self.safeGetObject(encrypt['/U']).original_bytes
         return U == real_U, key
 
     def getIsEncrypted(self):
