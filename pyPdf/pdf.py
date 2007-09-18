@@ -88,7 +88,8 @@ class PdfFileWriter(object):
         return IndirectObject(len(self._objects), 0, self)
 
     def getObject(self, ido):
-        assert ido.pdf == self
+        if ido.pdf != self:
+            raise ValueError("pdf must be self")
         return self._objects[ido.idnum - 1]
 
     ##
