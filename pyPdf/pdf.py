@@ -347,9 +347,6 @@ class PdfFileReader(object):
     # @return Returns a dict which maps names to {@link #Destination
     # destinations}.
     def getNamedDestinations(self, tree=None, retval=None):
-        if self.flattenedPages == None:
-            self._flatten()
-        
         if retval == None:
             retval = {}
             catalog = self.trailer["/Root"]
@@ -395,10 +392,7 @@ class PdfFileReader(object):
     # <p>
     # Stability: Added in v1.10, will exist for all future v1.x releases.
     # @return Returns a nested list of {@link #Destination destinations}.
-    def getOutlines(self, node = None, outlines = None):
-        if self.flattenedPages == None:
-            self._flatten()
-        
+    def getOutlines(self, node=None, outlines=None):
         if outlines == None:
             outlines = []
             catalog = self.trailer["/Root"]
@@ -1293,19 +1287,12 @@ class Destination(DictionaryObject):
     # @return A number, or None if not available.
     bottom = property(lambda self: self.get("/Bottom", None))
 
-
 def convertToInt(d, size):
-    if size <= 4:
-        d = "\x00\x00\x00\x00" + d
-        d = d[-4:]
-        return struct.unpack(">l", d)[0]
-    elif size <= 8:
-        d = "\x00\x00\x00\x00\x00\x00\x00\x00" + d
-        d = d[-8:]
-        return struct.unpack(">q", d)[0]
-    else:
-        # size too big
-        assert False
+    if size > 8:
+        raise utils.PdfReadError("invalid size in convertToInt")
+    d = "\x00\x00\x00\x00\x00\x00\x00\x00" + d
+    d = d[-8:]
+    return struct.unpack(">q", d)[0]
 
 # ref: pdf1.8 spec section 3.5.2 algorithm 3.2
 _encryption_padding = '\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56' + \

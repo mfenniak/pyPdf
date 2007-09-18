@@ -34,6 +34,11 @@ Implementation of stream filters for PDF.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
+from utils import PdfReadError
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from StringIO import StringIO
 
 try:
     import zlib
@@ -100,32 +105,33 @@ class FlateDecode(object):
         # predictor 1 == no predictor
         if predictor != 1:
             columns = decodeParms["/Columns"]
-            if predictor >= 10:
-                newdata = ""
+            # PNG prediction:
+            if predictor >= 10 and predictor <= 15:
+                output = StringIO()
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
-                prev_rowdata = "\x00"*rowlength
-                for row in range(len(data) / rowlength):
-                    rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
-                    filterByte = ord(rowdata[0])
+                prev_rowdata = (0,) * rowlength
+                for row in xrange(len(data) / rowlength):
+                    rowdata = [ord(x) for x in data[(row*rowlength):((row+1)*rowlength)]]
+                    filterByte = rowdata[0]
                     if filterByte == 0:
                         pass
                     elif filterByte == 1:
                         for i in range(2, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(rowdata[i-1])) % 256)
+                            rowdata[i] = (rowdata[i] + rowdata[i-1]) % 256
                     elif filterByte == 2:
                         for i in range(1, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(prev_rowdata[i])) % 256)
+                            rowdata[i] = (rowdata[i] + prev_rowdata[i]) % 256
                     else:
                         # unsupported PNG filter
-                        assert False
+                        raise PdfReadError("Unsupported PNG filter %r" % filterByte)
                     prev_rowdata = rowdata
-                    newdata += ''.join(rowdata[1:])
-                data = newdata
+                    output.write(''.join([chr(x) for x in rowdata[1:]]))
+                data = output.getvalue()
             else:
                 # unsupported predictor
-                assert False
+                raise PdfReadError("Unsupported flatedecode predictor %r" % predictor)
         return data
     decode = staticmethod(decode)
 
@@ -237,3 +243,4 @@ if __name__ == "__main__":
     """
     ascii85_originalText="Man is distinguished, not only by his reason, but by this singular passion from other animals, which is a lust of the mind, that by a perseverance of delight in the continued and indefatigable generation of knowledge, exceeds the short vehemence of any carnal pleasure."
     assert ASCII85Decode.decode(ascii85Test) == ascii85_originalText
+
