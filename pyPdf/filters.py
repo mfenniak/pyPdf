@@ -101,27 +101,28 @@ class FlateDecode(object):
         if predictor != 1:
             columns = decodeParms["/Columns"]
             if predictor >= 10:
-                newdata = ""
+                newdata = b""
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
-                prev_rowdata = "\x00"*rowlength
-                for row in range(len(data) / rowlength):
+                prev_rowdata = bytes(rowlength)
+                for row in range(len(data) // rowlength):
                     rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
-                    filterByte = ord(rowdata[0])
+                    filterByte = rowdata[0]
                     if filterByte == 0:
                         pass
                     elif filterByte == 1:
                         for i in range(2, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(rowdata[i-1])) % 256)
+                            rowdata[i] = (rowdata[i] + rowdata[i-1]) % 256
                     elif filterByte == 2:
                         for i in range(1, rowlength):
-                            rowdata[i] = chr((ord(rowdata[i]) + ord(prev_rowdata[i])) % 256)
+                            rowdata[i] = (rowdata[i] + prev_rowdata[i]) % 256
                     else:
                         # unsupported PNG filter
-                        assert False
+                        from .utils import PdfReadError
+                        raise PdfReadError("unsupported PNG filter")
                     prev_rowdata = rowdata
-                    newdata += ''.join(rowdata[1:])
+                    newdata += bytes(rowdata[1:])
                 data = newdata
             else:
                 # unsupported predictor
@@ -156,25 +157,25 @@ class ASCIIHexDecode(object):
 
 class ASCII85Decode(object):
     def decode(data, decodeParms=None):
-        retval = ""
+        retval = b""
         group = []
         x = 0
         hitEod = False
         # remove all whitespace from data
-        data = [y for y in data if not (y in ' \n\r\t')]
+        data = bytes([y for y in data if y not in b" \n\r\t"])
         while not hitEod:
             c = data[x]
-            if len(retval) == 0 and c == "<" and data[x+1] == "~":
+            if len(retval) == 0 and c == b"<"[0] and data[x+1] == b"~"[0]:
                 x += 2
                 continue
             #elif c.isspace():
             #    x += 1
             #    continue
-            elif c == 'z':
+            elif c == b'z'[0]:
                 assert len(group) == 0
-                retval += '\x00\x00\x00\x00'
+                retval += b'\x00\x00\x00\x00'
                 continue
-            elif c == "~" and data[x+1] == ">":
+            elif c == b"~"[0] and data[x+1] == b">"[0]:
                 if len(group) != 0:
                     # cannot have a final group of just 1 char
                     assert len(group) > 1
@@ -184,7 +185,7 @@ class ASCII85Decode(object):
                 else:
                     break
             else:
-                c = ord(c) - 33
+                c = c - 33
                 assert c >= 0 and c < 85
                 group += [ c ]
             if len(group) >= 5:
@@ -194,11 +195,11 @@ class ASCII85Decode(object):
                     group[3] * 85 + \
                     group[4]
                 assert b < (2**32 - 1)
-                c4 = chr((b >> 0) % 256)
-                c3 = chr((b >> 8) % 256)
-                c2 = chr((b >> 16) % 256)
-                c1 = chr(b >> 24)
-                retval += (c1 + c2 + c3 + c4)
+                c4 = (b >> 0) % 256
+                c3 = (b >> 8) % 256
+                c2 = (b >> 16) % 256
+                c1 = b >> 24
+                retval += bytes([c1, c2, c3, c4])
                 if hitEod:
                     retval = retval[:-4+hitEod]
                 group = []
@@ -207,7 +208,7 @@ class ASCII85Decode(object):
     decode = staticmethod(decode)
 
 def decodeStreamData(stream):
-    from generic import NameObject
+    from .generic import NameObject
     filters = stream.get("/Filter", ())
     if len(filters) and not isinstance(filters[0], NameObject):
         # we have a single filter instance
