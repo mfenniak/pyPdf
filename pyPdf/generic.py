@@ -419,8 +419,47 @@ class NameObject(str, PdfObject):
 
 
 class DictionaryObject(dict, PdfObject):
-    def __init__(self):
-        pass
+
+    def __init__(self, *args, **kwargs):
+        if len(args) == 0:
+            self.update(kwargs)
+        elif len(args) == 1:
+            arr = args[0]
+            # If we're passed a list/tuple, make a dict out of it
+            if not hasattr(arr, "iteritems"):
+                newarr = {}
+                for k, v in arr:
+                    newarr[k] = v
+                arr = newarr
+            self.update(arr)
+        else:
+            raise TypeError("dict expected at most 1 argument, got 3")
+
+    def update(self, arr):
+        # note, a ValueError halfway through copying values
+        # will leave half the values in this dict.
+        for k, v in arr.iteritems():
+            self.__setitem__(k, v)
+
+    def raw_get(self, key):
+        return dict.__getitem__(self, key)
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, PdfObject):
+            raise ValueError("key must be PdfObject")
+        if not isinstance(value, PdfObject):
+            raise ValueError("value must be PdfObject")
+        return dict.__setitem__(self, key, value)
+
+    def setdefault(self, key, value=None):
+        if not isinstance(key, PdfObject):
+            raise ValueError("key must be PdfObject")
+        if not isinstance(value, PdfObject):
+            raise ValueError("value must be PdfObject")
+        return dict.setdefault(self, key, value)
+
+    def __getitem__(self, key):
+        return dict.__getitem__(self, key).getObject()
 
     def writeToStream(self, stream, encryption_key):
         stream.write("<<\n")

@@ -105,7 +105,7 @@ class PdfFileWriter(object):
         page = self._addObject(page)
         pages = self.getObject(self._pages)
         pages["/Kids"].append(page)
-        pages["/Count"] = NumberObject(pages["/Count"] + 1)
+        pages[NameObject("/Count")] = NumberObject(pages["/Count"] + 1)
 
     ##
     # Encrypt this PDF file with the PDF Standard encryption handler.
@@ -272,7 +272,6 @@ class PdfFileWriter(object):
 class PdfFileReader(object):
     def __init__(self, stream):
         self.flattenedPages = None
-        self.pageNumbers = {}
         self.resolvedObjects = {}
         self.read(stream)
         self.stream = stream
@@ -290,7 +289,7 @@ class PdfFileReader(object):
     def getDocumentInfo(self):
         if not self.trailer.has_key("/Info"):
             return None
-        obj = self.getObject(self.trailer['/Info'])
+        obj = self.trailer['/Info']
         retval = DocumentInformation()
         retval.update(obj)
         return retval
@@ -352,32 +351,32 @@ class PdfFileReader(object):
         
         if retval == None:
             retval = {}
-            catalog = self.trailer["/Root"].getObject()
+            catalog = self.trailer["/Root"]
             
             # get the name tree
             if catalog.has_key("/Dests"):
-                tree = catalog["/Dests"].getObject()
+                tree = catalog["/Dests"]
             elif catalog.has_key("/Names"):
-                names = catalog['/Names'].getObject()
+                names = catalog['/Names']
                 if names.has_key("/Dests"):
-                    tree = names['/Dests'].getObject()
+                    tree = names['/Dests']
         
         if tree == None:
             return retval
 
         if tree.has_key("/Kids"):
             # recurse down the tree
-            for kid in tree["/Kids"].getObject():
+            for kid in tree["/Kids"]:
                 self.getNamedDestinations(kid.getObject(), retval)
 
         if tree.has_key("/Names"):
-            names = tree["/Names"].getObject()
+            names = tree["/Names"]
             for i in range(0, len(names), 2):
                 key = names[i].getObject()
                 val = names[i+1].getObject()
                 if isinstance(val, DictionaryObject) and val.has_key('/D'):
-                    val = val['/D'].getObject()
-                dest = self._buildDestination(val, key)
+                    val = val['/D']
+                dest = self._buildDestination(key, val)
                 if dest != None:
                     retval[key] = dest
 
@@ -401,13 +400,13 @@ class PdfFileReader(object):
         
         if outlines == None:
             outlines = []
-            catalog = self.trailer["/Root"].getObject()
+            catalog = self.trailer["/Root"]
             
             # get the outline dictionary and named destinations
             if catalog.has_key("/Outlines"):
-                lines = catalog["/Outlines"].getObject()
+                lines = catalog["/Outlines"]
                 if lines.has_key("/First"):
-                    node = lines["/First"].getObject()
+                    node = lines["/First"]
             self._namedDests = self.getNamedDestinations()
             
         if node == None:
@@ -422,46 +421,39 @@ class PdfFileReader(object):
             # check for sub-outlines
             if node.has_key("/First"):
                 subOutlines = []
-                self.getOutlines(node["/First"].getObject(), subOutlines)
+                self.getOutlines(node["/First"], subOutlines)
                 if subOutlines:
                     outlines.append(subOutlines)
 
             if not node.has_key("/Next"):
                 break
-            node = node["/Next"].getObject()
+            node = node["/Next"]
 
         return outlines
 
-    def _buildDestination(self, array, title):
-        if not (isinstance(array, ArrayObject) and len(array) >= 2 and \
-                isinstance(array[0], IndirectObject)):
-            return None
-            
-        pageKey = (array[0].generation, array[0].idnum)
-        if not self.pageNumbers.has_key(pageKey):
-            return None
-
-        pageNum = self.pageNumbers[pageKey]
-        return Destination(*([title, pageNum]+array[1:]))
+    def _buildDestination(self, title, array):
+        page, typ = array[0:2]
+        array = array[2:]
+        return Destination(title, page, typ, *array)
           
     def _buildOutline(self, node):
         dest, title, outline = None, None, None
         
         if node.has_key("/A") and node.has_key("/Title"):
             # Action, section 8.5 (only type GoTo supported)
-            title  = node["/Title"].getObject()
-            action = node["/A"].getObject()
+            title  = node["/Title"]
+            action = node["/A"]
             if action["/S"] == "/GoTo":
-                dest = action["/D"].getObject()
+                dest = action["/D"]
         elif node.has_key("/Dest") and node.has_key("/Title"):
             # Destination, section 8.2.1
-            title = node["/Title"].getObject()
-            dest  = node["/Dest"].getObject()
+            title = node["/Title"]
+            dest  = node["/Dest"]
 
         # if destination found, then create outline
         if dest:
             if isinstance(dest, ArrayObject):
-                outline = self._buildDestination(dest, title)
+                outline = self._buildDestination(title, dest)
             elif isinstance(dest, str) and self._namedDests.has_key(dest):
                 outline = self._namedDests[dest]
                 outline.title = title
@@ -476,7 +468,7 @@ class PdfFileReader(object):
     pages = property(lambda self: ConvertFunctionsToVirtualList(self.getNumPages, self.getPage),
             None, None)
 
-    def _flatten(self, pages = None, inherit = None):
+    def _flatten(self, pages=None, inherit=None):
         inheritablePageAttributes = (
             NameObject("/Resources"), NameObject("/MediaBox"),
             NameObject("/CropBox"), NameObject("/Rotate")
@@ -485,30 +477,23 @@ class PdfFileReader(object):
             inherit = dict()
         if pages == None:
             self.flattenedPages = []
-            catalog = self.getObject(self.trailer["/Root"])
-            pages = self.getObject(catalog["/Pages"])
-        indirectReference = None
-        if isinstance(pages, IndirectObject):
-            indirectReference = pages
-            pages = self.getObject(pages)
+            catalog = self.trailer["/Root"].getObject()
+            pages = catalog["/Pages"].getObject()
         t = pages["/Type"]
         if t == "/Pages":
             for attr in inheritablePageAttributes:
                 if pages.has_key(attr):
                     inherit[attr] = pages[attr]
-            for page in pages["/Kids"].getObject():
-                self._flatten(page, inherit)
+            for page in pages["/Kids"]:
+                self._flatten(page.getObject(), inherit)
         elif t == "/Page":
             for attr,value in inherit.items():
                 # if the page has it's own value, it does not inherit the
                 # parent's value:
                 if not pages.has_key(attr):
                     pages[attr] = value
-            pageObj = PageObject(self, indirectReference)
+            pageObj = PageObject(self)
             pageObj.update(pages)
-            if indirectReference:
-                key = (indirectReference.generation, indirectReference.idnum)
-                self.pageNumbers[key] = len(self.flattenedPages)
             self.flattenedPages.append(pageObj)
 
     def getObject(self, indirectReference):
@@ -520,7 +505,7 @@ class PdfFileReader(object):
             # indirect reference to object in object stream
             # read the entire object stream into memory
             stmnum,idx = self.xref_objStm[indirectReference.idnum]
-            objStm = self.getObject(IndirectObject(stmnum, 0, self))
+            objStm = IndirectObject(stmnum, 0, self).getObject()
             assert objStm['/Type'] == '/ObjStm'
             assert idx < objStm['/N']
             streamData = StringIO(objStm.getData())
@@ -612,7 +597,7 @@ class PdfFileReader(object):
         # read all cross reference tables and their trailers
         self.xref = {}
         self.xref_objStm = {}
-        self.trailer = {}
+        self.trailer = DictionaryObject()
         while 1:
             # load the xref table
             stream.seek(startxref, 0)
@@ -662,8 +647,8 @@ class PdfFileReader(object):
                 for key, value in newTrailer.items():
                     if not self.trailer.has_key(key):
                         self.trailer[key] = value
-                if newTrailer.has_key(NameObject("/Prev")):
-                    startxref = newTrailer[NameObject("/Prev")]
+                if newTrailer.has_key("/Prev"):
+                    startxref = newTrailer["/Prev"]
                 else:
                     break
             elif x.isdigit():
@@ -710,7 +695,7 @@ class PdfFileReader(object):
                 trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
                 for key in trailerKeys:
                     if xrefstream.has_key(key) and not self.trailer.has_key(key):
-                        self.trailer[NameObject(key)] = xrefstream[key]
+                        self.trailer[NameObject(key)] = xrefstream.raw_get(key)
                 if xrefstream.has_key("/Prev"):
                     startxref = xrefstream["/Prev"]
                 else:
@@ -867,10 +852,9 @@ def createRectangleAccessor(name, fallback):
 # will be created by accessing the {@link #PdfFileReader.getPage getPage}
 # function of the {@link #PdfFileReader PdfFileReader} class.
 class PageObject(DictionaryObject):
-    def __init__(self, pdf, indirectReference = None):
+    def __init__(self, pdf):
         DictionaryObject.__init__(self)
         self.pdf = pdf
-        self.indirectReference = indirectReference
 
     ##
     # Rotates a page clockwise by increments of 90 degrees.
@@ -1244,72 +1228,67 @@ class DocumentInformation(DictionaryObject):
 # See section 8.2.1 of the PDF 1.6 reference.
 # Stability: Added in v1.10, will exist for all v1.x releases.
 class Destination(DictionaryObject):
-    def __init__(self, *args):
+    def __init__(self, title, page, typ, *args):
         DictionaryObject.__init__(self)
-        self.title = args[0]
-        self["/Page"], self["/Type"] = args[1], args[2]
+        self[NameObject("/Title")] = title
+        self[NameObject("/Page")] = page
+        self[NameObject("/Type")] = typ
         
         # from table 8.2 of the PDF 1.6 reference.
-        mapNull = lambda x: {True: None, False: x}[isinstance(x, NullObject)]
-        params = map(mapNull, args[3:])
-        type = self["/Type"]
-
-        if type == "/XYZ":
-            self["/Left"], self["/Top"], self["/Zoom"] = params
-        elif type == "/FitR":
-            self["/Left"], self["/Bottom"], \
-                self["/Right"], self["/Top"] = params
-        elif type in ["/FitH", "FitBH"]:
-            self["/Top"], = params
-        elif type in ["/FitV", "FitBV"]:
-            self["/Left"], = params
-        elif type in ["/Fit", "FitB"]:
+        if typ == "/XYZ":
+            (self[NameObject("/Left")], self[NameObject("/Top")],
+                self[NameObject("/Zoom")]) = args
+        elif typ == "/FitR":
+            (self[NameObject("/Left")], self[NameObject("/Bottom")],
+                self[NameObject("/Right")], self[NameObject("/Top")]) = args
+        elif typ in ["/FitH", "FitBH"]:
+            self[NameObject("/Top")], = args
+        elif typ in ["/FitV", "FitBV"]:
+            self[NameObject("/Left")], = args
+        elif typ in ["/Fit", "FitB"]:
             pass
         else:
-            raise utils.PdfReadError, "Unknown Destination Type: " + type
+            raise utils.PdfReadError("Unknown Destination Type: %r" % typ)
           
-    def setTitle(self, title):
-        self["/Title"] = title.strip()
-
     ##
-    # Read-write property accessing the destination title.
+    # Read-only property accessing the destination title.
     # @return A string.
-    title = property(lambda self: self.get("/Title"), setTitle, None)
+    title = property(lambda self: self.get("/Title"))
 
     ##
     # Read-only property accessing the destination page.
     # @return An integer.
-    page = property(lambda self: self.get("/Page"), None, None)
+    page = property(lambda self: self.get("/Page"))
 
     ##
     # Read-only property accessing the destination type.
     # @return A string.
-    type = property(lambda self: self.get("/Type"), None, None)
+    typ = property(lambda self: self.get("/Type"))
 
     ##
     # Read-only property accessing the zoom factor.
     # @return A number, or None if not available.
-    zoom = property(lambda self: self.get("/Zoom", None), None, None)
+    zoom = property(lambda self: self.get("/Zoom", None))
 
     ##
     # Read-only property accessing the left horizontal coordinate.
     # @return A number, or None if not available.
-    left = property(lambda self: self.get("/Left", None), None, None)
+    left = property(lambda self: self.get("/Left", None))
 
     ##
     # Read-only property accessing the right horizontal coordinate.
     # @return A number, or None if not available.
-    right = property(lambda self: self.get("/Right", None), None, None)
+    right = property(lambda self: self.get("/Right", None))
 
     ##
     # Read-only property accessing the top vertical coordinate.
     # @return A number, or None if not available.
-    top = property(lambda self: self.get("/Top", None), None, None)
+    top = property(lambda self: self.get("/Top", None))
 
     ##
     # Read-only property accessing the bottom vertical coordinate.
     # @return A number, or None if not available.
-    bottom = property(lambda self: self.get("/Bottom", None), None, None)
+    bottom = property(lambda self: self.get("/Bottom", None))
 
 
 def convertToInt(d, size):
