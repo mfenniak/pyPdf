@@ -455,9 +455,11 @@ class PdfFileReader(object):
         if dest:
             if isinstance(dest, ArrayObject):
                 outline = self._buildDestination(title, dest)
-            elif isinstance(dest, str) and self._namedDests.has_key(dest):
+            elif isinstance(dest, unicode) and self._namedDests.has_key(dest):
                 outline = self._namedDests[dest]
-                outline.title = title
+                outline[NameObject("/Title")] = title
+            else:
+                raise utils.PdfReadError("Unexpected destination %r" % dest)
         return outline
 
     ##
