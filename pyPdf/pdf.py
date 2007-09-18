@@ -346,43 +346,42 @@ class PdfFileReader(object):
     # Stability: Added in v1.10, will exist for all future v1.x releases.
     # @return Returns a dict which maps names to {@link #Destination
     # destinations}.
-    def getNamedDestinations(self, tree = None, map = None):
+    def getNamedDestinations(self, tree=None, retval=None):
         if self.flattenedPages == None:
             self._flatten()
         
-        get = self.safeGetObject
-        if map == None:
-            map = {}
-            catalog = get(self.trailer["/Root"])
+        if retval == None:
+            retval = {}
+            catalog = self.trailer["/Root"].getObject()
             
             # get the name tree
             if catalog.has_key("/Dests"):
-                tree = get(catalog["/Dests"])
+                tree = catalog["/Dests"].getObject()
             elif catalog.has_key("/Names"):
-                names = get(catalog['/Names'])
+                names = catalog['/Names'].getObject()
                 if names.has_key("/Dests"):
-                    tree = get(names['/Dests'])
+                    tree = names['/Dests'].getObject()
         
         if tree == None:
-            return map
+            return retval
 
         if tree.has_key("/Kids"):
             # recurse down the tree
-            for kid in get(tree["/Kids"]):
-                self.getNamedDestinations(get(kid), map)
+            for kid in tree["/Kids"].getObject():
+                self.getNamedDestinations(kid.getObject(), retval)
 
         if tree.has_key("/Names"):
-            names = get(tree["/Names"])
+            names = tree["/Names"].getObject()
             for i in range(0, len(names), 2):
-                key = get(names[i])
-                val = get(names[i+1])
+                key = names[i].getObject()
+                val = names[i+1].getObject()
                 if isinstance(val, DictionaryObject) and val.has_key('/D'):
-                    val = get(val['/D'])
+                    val = val['/D'].getObject()
                 dest = self._buildDestination(val, key)
                 if dest != None:
-                    map[key] = dest
+                    retval[key] = dest
 
-        return map
+        return retval
 
     ##
     # Read-only property that accesses the {@link #PdfFileReader.getOutlines
@@ -400,16 +399,15 @@ class PdfFileReader(object):
         if self.flattenedPages == None:
             self._flatten()
         
-        get = self.safeGetObject
         if outlines == None:
             outlines = []
-            catalog = get(self.trailer["/Root"])
+            catalog = self.trailer["/Root"].getObject()
             
             # get the outline dictionary and named destinations
             if catalog.has_key("/Outlines"):
-                lines = get(catalog["/Outlines"])
+                lines = catalog["/Outlines"].getObject()
                 if lines.has_key("/First"):
-                    node = get(lines["/First"])
+                    node = lines["/First"].getObject()
             self._namedDests = self.getNamedDestinations()
             
         if node == None:
@@ -424,13 +422,13 @@ class PdfFileReader(object):
             # check for sub-outlines
             if node.has_key("/First"):
                 subOutlines = []
-                self.getOutlines(get(node["/First"]), subOutlines)
+                self.getOutlines(node["/First"].getObject(), subOutlines)
                 if subOutlines:
                     outlines.append(subOutlines)
 
             if not node.has_key("/Next"):
                 break
-            node = get(node["/Next"])
+            node = node["/Next"].getObject()
 
         return outlines
 
@@ -451,14 +449,14 @@ class PdfFileReader(object):
         
         if node.has_key("/A") and node.has_key("/Title"):
             # Action, section 8.5 (only type GoTo supported)
-            title  = self.safeGetObject(node["/Title"])
-            action = self.safeGetObject(node["/A"])
+            title  = node["/Title"].getObject()
+            action = node["/A"].getObject()
             if action["/S"] == "/GoTo":
-                dest = self.safeGetObject(action["/D"])
+                dest = action["/D"].getObject()
         elif node.has_key("/Dest") and node.has_key("/Title"):
             # Destination, section 8.2.1
-            title = self.safeGetObject(node["/Title"])
-            dest  = self.safeGetObject(node["/Dest"])
+            title = node["/Title"].getObject()
+            dest  = node["/Dest"].getObject()
 
         # if destination found, then create outline
         if dest:
@@ -498,7 +496,7 @@ class PdfFileReader(object):
             for attr in inheritablePageAttributes:
                 if pages.has_key(attr):
                     inherit[attr] = pages[attr]
-            for page in self.safeGetObject(pages["/Kids"]):
+            for page in pages["/Kids"].getObject():
                 self._flatten(page, inherit)
         elif t == "/Page":
             for attr,value in inherit.items():
@@ -512,11 +510,6 @@ class PdfFileReader(object):
                 key = (indirectReference.generation, indirectReference.idnum)
                 self.pageNumbers[key] = len(self.flattenedPages)
             self.flattenedPages.append(pageObj)
-
-    def safeGetObject(self, obj):
-        if isinstance(obj, IndirectObject):
-            return self.safeGetObject(self.getObject(obj))
-        return obj
 
     def getObject(self, indirectReference):
         retval = self.resolvedObjects.get(indirectReference.generation, {}).get(indirectReference.idnum, None)
@@ -778,7 +771,7 @@ class PdfFileReader(object):
             self._override_encryption = False
 
     def _decrypt(self, password):
-        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
+        encrypt = self.trailer['/Encrypt'].getObject()
         if encrypt['/Filter'] != '/Standard':
             raise NotImplementedError, "only Standard PDF encryption handler is available"
         if not (encrypt['/V'] in (1, 2)):
@@ -788,13 +781,13 @@ class PdfFileReader(object):
             self._decryption_key = key
             return 1
         else:
-            rev = self.safeGetObject(encrypt['/R'])
+            rev = encrypt['/R'].getObject()
             if rev == 2:
                 keylen = 5
             else:
-                keylen = self.safeGetObject(encrypt['/Length']) / 8
+                keylen = encrypt['/Length'].getObject() / 8
             key = _alg33_1(password, rev, keylen)
-            real_O = self.safeGetObject(encrypt["/O"])
+            real_O = encrypt["/O"].getObject()
             if rev == 2:
                 userpass = utils.RC4_encrypt(key, real_O)
             else:
@@ -812,20 +805,20 @@ class PdfFileReader(object):
         return 0
 
     def _authenticateUserPassword(self, password):
-        encrypt = self.safeGetObject(self.trailer['/Encrypt'])
-        rev = self.safeGetObject(encrypt['/R'])
-        owner_entry = self.safeGetObject(encrypt['/O']).original_bytes
-        p_entry = self.safeGetObject(encrypt['/P'])
-        id_entry = self.safeGetObject(self.trailer['/ID'])
-        id1_entry = self.safeGetObject(id_entry[0])
+        encrypt = self.trailer['/Encrypt'].getObject()
+        rev = encrypt['/R'].getObject()
+        owner_entry = encrypt['/O'].getObject().original_bytes
+        p_entry = encrypt['/P'].getObject()
+        id_entry = self.trailer['/ID'].getObject()
+        id1_entry = id_entry[0].getObject()
         if rev == 2:
             U, key = _alg34(password, owner_entry, p_entry, id1_entry)
         elif rev >= 3:
             U, key = _alg35(password, rev,
-                    self.safeGetObject(encrypt["/Length"]) / 8, owner_entry,
+                    encrypt["/Length"].getObject() / 8, owner_entry,
                     p_entry, id1_entry,
-                    self.safeGetObject(encrypt.get("/EncryptMetadata", False)))
-        real_U = self.safeGetObject(encrypt['/U']).original_bytes
+                    encrypt.get("/EncryptMetadata", BooleanObject(False)).getObject())
+        real_U = encrypt['/U'].getObject().original_bytes
         return U == real_U, key
 
     def getIsEncrypted(self):
