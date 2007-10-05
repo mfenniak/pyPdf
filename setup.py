@@ -20,15 +20,15 @@ It is therefore a useful tool for websites that manage or manipulate PDFs.
 
 setup(
         name="pyPdf",
-        version="1.9",
+        version="1.10",
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",
         author_email="biziqe@mathieu.fenniak.net",
         url="http://pybrary.net/pyPdf/",
-        download_url="http://pybrary.net/pyPdf/pyPdf-1.9.tar.gz",
+        download_url="http://pybrary.net/pyPdf/pyPdf-1.10.tar.gz",
         classifiers = [
-            "Development Status :: 4 - Beta",
+            "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Developers",
             "License :: OSI Approved :: BSD License",
             "Programming Language :: Python",

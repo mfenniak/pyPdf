@@ -1,3 +1,40 @@
+Version 1.10, 2007-10-04
+------------------------
+
+ - Text strings from PDF files are returned as Unicode string objects when
+ pyPdf determines that they can be decoded (as UTF-16 strings, or as
+ PDFDocEncoding strings).  Unicode objects are also written out when
+ necessary.  This means that string objects in pyPdf can be either
+ generic.ByteStringObject instances, or generic.TextStringObject instances.
+
+ - The extractText method now returns a unicode string object.
+
+ - All document information properties now return unicode string objects.  In
+ the event that a document provides docinfo properties that are not decoded by
+ pyPdf, the raw byte strings can be accessed with an "_raw" property (ie.
+ title_raw rather than title)
+
+ - generic.DictionaryObject instances have been enhanced to be easier to use.
+ Values coming out of dictionary objects will automatically be de-referenced
+ (.getObject will be called on them), unless accessed by the new "raw_get"
+ method.  DictionaryObjects can now only contain PdfObject instances (as keys
+ and values), making it easier to debug where non-PdfObject values (which
+ cannot be written out) are entering dictionaries.
+
+ - Support for reading named destinations and outlines in PDF files.  Original
+ patch by Ashish Kulkarni.
+
+ - Stream compatibility reading enhancements for malformed PDF files.
+
+ - Cross reference table reading enhancements for malformed PDF files.
+
+ - Encryption documentation.
+
+ - Replace some "assert" statements with error raising.
+
+ - Minor optimizations to FlateDecode algorithm increase speed when using PNG
+ predictors.
+
 Version 1.9, 2006-12-15
 -----------------------
 
