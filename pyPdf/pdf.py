@@ -684,9 +684,11 @@ class PdfFileReader(object):
                     elif xref_type == 1:
                         if not self.xref.has_key(generation):
                             self.xref[generation] = {}
-                        self.xref[generation][num] = byte_offset
+                        if not num in self.xref[generation]:
+                            self.xref[generation][num] = byte_offset
                     elif xref_type == 2:
-                        self.xref_objStm[num] = [objstr_num, obstr_idx]
+                        if not num in self.xref_objStm:
+                            self.xref_objStm[num] = [objstr_num, obstr_idx]
                     cnt += 1
                     num += 1
                 trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
