@@ -616,6 +616,16 @@ class PdfFileReader(object):
                     cnt = 0
                     while cnt < size:
                         line = stream.read(20)
+                        # It's very clear in section 3.4.3 of the PDF spec
+                        # that all cross-reference table lines are a fixed
+                        # 20 bytes.  However... some malformed PDF files
+                        # use a single character EOL without a preceeding
+                        # space.  Detect that case, and seek the stream
+                        # back one character.  (0-9 means we've bled into
+                        # the next xref entry, t means we've bled into the
+                        # text "trailer"):
+                        if line[-1] in "0123456789t":
+                            stream.seek(-1, 1)
                         offset, generation = line[:16].split(" ")
                         offset, generation = int(offset), int(generation)
                         if not self.xref.has_key(generation):
