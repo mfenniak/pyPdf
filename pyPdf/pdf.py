@@ -1106,6 +1106,14 @@ class ContentStream(DecodedStreamObject):
                 else:
                     self.operations.append((operands, operator))
                     operands = []
+            elif peek == '%':
+                # If we encounter a comment in the content stream, we have to
+                # handle it here.  Typically, readObject will handle
+                # encountering a comment -- but readObject assumes that
+                # following the comment must be the object we're trying to
+                # read.  In this case, it could be an operator instead.
+                while peek not in ('\r', '\n'):
+                    peek = stream.read(1)
             else:
                 operands.append(readObject(stream, None))
 
