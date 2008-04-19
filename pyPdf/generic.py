@@ -215,7 +215,7 @@ class NumberObject(int, PdfObject):
         name = b""
         while True:
             tok = stream.read(1)
-            if tok != b'+' and tok != b'-' and tok != b'.' and not tok in '0123456789':
+            if tok != b'+' and tok != b'-' and tok != b'.' and not tok in b'0123456789':
                 stream.seek(-1, 1)
                 break
             name += tok
@@ -262,7 +262,7 @@ def readHexStringFromStream(stream):
             break
         x += tok
         if len(x) == 2:
-            txt += bytes.fromhex(x)
+            txt += bytes.fromhex(x.decode("ascii"))
             x = b""
     if len(x) == 1:
         x += b"0"
@@ -682,14 +682,14 @@ class RectangleObject(ArrayObject):
 
 
 def encode_pdfdocencoding(unicode_string):
-    retval = b''
+    retval = bytearray()
     for c in unicode_string:
         try:
             retval.append(_pdfDocEncoding_rev[c])
         except KeyError:
             raise UnicodeEncodeError("pdfdocencoding", c, -1, -1,
                     "does not exist in translation table")
-    return retval
+    return bytes(retval)
 
 def decode_pdfdocencoding(byte_array):
     retval = ''
