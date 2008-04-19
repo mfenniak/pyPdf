@@ -34,11 +34,6 @@ Implementation of stream filters for PDF.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
-from utils import PdfReadError
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from StringIO import StringIO
 
 try:
     import zlib
@@ -98,6 +93,7 @@ except ImportError:
 
 class FlateDecode(object):
     def decode(data, decodeParms):
+        from .utils import PdfReadError
         data = decompress(data)
         predictor = 1
         if decodeParms:
@@ -107,13 +103,13 @@ class FlateDecode(object):
             columns = decodeParms["/Columns"]
             # PNG prediction:
             if predictor >= 10 and predictor <= 15:
-                output = StringIO()
+                newdata = b""
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
-                prev_rowdata = (0,) * rowlength
-                for row in xrange(len(data) / rowlength):
-                    rowdata = [ord(x) for x in data[(row*rowlength):((row+1)*rowlength)]]
+                prev_rowdata = bytes(rowlength)
+                for row in range(len(data) // rowlength):
+                    rowdata = list(data[(row*rowlength):((row+1)*rowlength)])
                     filterByte = rowdata[0]
                     if filterByte == 0:
                         pass
@@ -127,8 +123,9 @@ class FlateDecode(object):
                         # unsupported PNG filter
                         raise PdfReadError("Unsupported PNG filter %r" % filterByte)
                     prev_rowdata = rowdata
-                    output.write(''.join([chr(x) for x in rowdata[1:]]))
-                data = output.getvalue()
+
+                    newdata += bytes(rowdata[1:])
+                data = newdata
             else:
                 # unsupported predictor
                 raise PdfReadError("Unsupported flatedecode predictor %r" % predictor)
@@ -162,25 +159,25 @@ class ASCIIHexDecode(object):
 
 class ASCII85Decode(object):
     def decode(data, decodeParms=None):
-        retval = ""
+        retval = b""
         group = []
         x = 0
         hitEod = False
         # remove all whitespace from data
-        data = [y for y in data if not (y in ' \n\r\t')]
+        data = bytes([y for y in data if y not in b" \n\r\t"])
         while not hitEod:
             c = data[x]
-            if len(retval) == 0 and c == "<" and data[x+1] == "~":
+            if len(retval) == 0 and c == b"<"[0] and data[x+1] == b"~"[0]:
                 x += 2
                 continue
             #elif c.isspace():
             #    x += 1
             #    continue
-            elif c == 'z':
+            elif c == b'z'[0]:
                 assert len(group) == 0
-                retval += '\x00\x00\x00\x00'
+                retval += b'\x00\x00\x00\x00'
                 continue
-            elif c == "~" and data[x+1] == ">":
+            elif c == b"~"[0] and data[x+1] == b">"[0]:
                 if len(group) != 0:
                     # cannot have a final group of just 1 char
                     assert len(group) > 1
@@ -190,7 +187,7 @@ class ASCII85Decode(object):
                 else:
                     break
             else:
-                c = ord(c) - 33
+                c = c - 33
                 assert c >= 0 and c < 85
                 group += [ c ]
             if len(group) >= 5:
@@ -200,11 +197,11 @@ class ASCII85Decode(object):
                     group[3] * 85 + \
                     group[4]
                 assert b < (2**32 - 1)
-                c4 = chr((b >> 0) % 256)
-                c3 = chr((b >> 8) % 256)
-                c2 = chr((b >> 16) % 256)
-                c1 = chr(b >> 24)
-                retval += (c1 + c2 + c3 + c4)
+                c4 = (b >> 0) % 256
+                c3 = (b >> 8) % 256
+                c2 = (b >> 16) % 256
+                c1 = b >> 24
+                retval += bytes([c1, c2, c3, c4])
                 if hitEod:
                     retval = retval[:-4+hitEod]
                 group = []
@@ -213,7 +210,7 @@ class ASCII85Decode(object):
     decode = staticmethod(decode)
 
 def decodeStreamData(stream):
-    from generic import NameObject
+    from .generic import NameObject
     filters = stream.get("/Filter", ())
     if len(filters) and not isinstance(filters[0], NameObject):
         # we have a single filter instance

@@ -48,10 +48,10 @@ __author_email__ = "biziqe@mathieu.fenniak.net"
 #        proxy = staticmethod(proxy)
 
 def readUntilWhitespace(stream, maxchars=None):
-    txt = ""
+    txt = b""
     while True:
         tok = stream.read(1)
-        if tok.isspace() or not tok:
+        if tok in b" \t\n\r" or not tok:
             break
         txt += tok
         if len(txt) == maxchars:
@@ -59,8 +59,8 @@ def readUntilWhitespace(stream, maxchars=None):
     return txt
 
 def readNonWhitespace(stream):
-    tok = ' '
-    while tok == '\n' or tok == '\r' or tok == ' ' or tok == '\t':
+    tok = b' '
+    while tok == b'\n' or tok == b'\r' or tok == b' ' or tok == b'\t':
         tok = stream.read(1)
     return tok
 
@@ -74,29 +74,29 @@ class ConvertFunctionsToVirtualList(object):
 
     def __getitem__(self, index):
         if not isinstance(index, int):
-            raise TypeError, "sequence indices must be integers"
+            raise TypeError("sequence indices must be integers")
         len_self = len(self)
         if index < 0:
             # support negative indexes
             index = len_self + index
         if index < 0 or index >= len_self:
-            raise IndexError, "sequence index out of range"
+            raise IndexError("sequence index out of range")
         return self.getFunction(index)
 
 def RC4_encrypt(key, plaintext):
     S = [i for i in range(256)]
     j = 0
     for i in range(256):
-        j = (j + S[i] + ord(key[i % len(key)])) % 256
+        j = (j + S[i] + (key[i % len(key)])) % 256
         S[i], S[j] = S[j], S[i]
     i, j = 0, 0
-    retval = ""
+    retval = b""
     for x in range(len(plaintext)):
         i = (i + 1) % 256
         j = (j + S[i]) % 256
         S[i], S[j] = S[j], S[i]
         t = S[(S[i] + S[j]) % 256]
-        retval += chr(ord(plaintext[x]) ^ t)
+        retval += bytes([plaintext[x] ^ t])
     return retval
 
 class PdfReadError(Exception):
@@ -105,6 +105,6 @@ class PdfReadError(Exception):
 if __name__ == "__main__":
     # test RC4
     out = RC4_encrypt("Key", "Plaintext")
-    print repr(out)
+    print(repr(out))
     pt = RC4_encrypt("Key", out)
-    print repr(pt)
+    print(repr(pt))
