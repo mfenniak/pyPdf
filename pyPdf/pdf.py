@@ -344,9 +344,6 @@ class PdfFileReader(object):
     # @return Returns a dict which maps names to {@link #Destination
     # destinations}.
     def getNamedDestinations(self, tree=None, retval=None):
-        if self.flattenedPages == None:
-            self._flatten()
-        
         if retval == None:
             retval = {}
             catalog = self.trailer["/Root"]
@@ -392,10 +389,7 @@ class PdfFileReader(object):
     # <p>
     # Stability: Added in v1.10, will exist for all future v1.x releases.
     # @return Returns a nested list of {@link #Destination destinations}.
-    def getOutlines(self, node = None, outlines = None):
-        if self.flattenedPages == None:
-            self._flatten()
-        
+    def getOutlines(self, node=None, outlines=None):
         if outlines == None:
             outlines = []
             catalog = self.trailer["/Root"]
@@ -619,6 +613,16 @@ class PdfFileReader(object):
                     cnt = 0
                     while cnt < size:
                         line = stream.read(20)
+                        # It's very clear in section 3.4.3 of the PDF spec
+                        # that all cross-reference table lines are a fixed
+                        # 20 bytes.  However... some malformed PDF files
+                        # use a single character EOL without a preceeding
+                        # space.  Detect that case, and seek the stream
+                        # back one character.  (0-9 means we've bled into
+                        # the next xref entry, t means we've bled into the
+                        # text "trailer"):
+                        if line[-1] in b"0123456789t":
+                            stream.seek(-1, 1)
                         offset, generation = line[:16].split(b" ")
                         offset, generation = int(offset), int(generation)
                         if generation not in self.xref:
@@ -687,9 +691,11 @@ class PdfFileReader(object):
                     elif xref_type == 1:
                         if generation not in self.xref:
                             self.xref[generation] = {}
-                        self.xref[generation][num] = byte_offset
+                        if not num in self.xref[generation]:
+                            self.xref[generation][num] = byte_offset
                     elif xref_type == 2:
-                        self.xref_objStm[num] = [objstr_num, obstr_idx]
+                        if not num in self.xref_objStm:
+                            self.xref_objStm[num] = [objstr_num, obstr_idx]
                     cnt += 1
                     num += 1
                 trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
@@ -1097,6 +1103,14 @@ class ContentStream(DecodedStreamObject):
                 else:
                     self.operations.append((operands, operator))
                     operands = []
+            elif peek == '%':
+                # If we encounter a comment in the content stream, we have to
+                # handle it here.  Typically, readObject will handle
+                # encountering a comment -- but readObject assumes that
+                # following the comment must be the object we're trying to
+                # read.  In this case, it could be an operator instead.
+                while peek not in ('\r', '\n'):
+                    peek = stream.read(1)
             else:
                 operands.append(readObject(stream, None))
 
@@ -1301,8 +1315,8 @@ def convertToInt(d, size):
         d = d[-8:]
         return struct.unpack(">q", d)[0]
     else:
-        # size too big
-        assert False
+        raise utils.PdfReadError("invalid size in convertToInt")
+
 
 # ref: pdf1.8 spec section 3.5.2 algorithm 3.2
 _encryption_padding = b'\x28\xbf\x4e\x5e\x4e\x75\x8a\x41\x64\x00\x4e\x56' + \

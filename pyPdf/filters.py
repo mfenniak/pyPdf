@@ -93,6 +93,7 @@ except ImportError:
 
 class FlateDecode(object):
     def decode(data, decodeParms):
+        from .utils import PdfReadError
         data = decompress(data)
         predictor = 1
         if decodeParms:
@@ -100,7 +101,8 @@ class FlateDecode(object):
         # predictor 1 == no predictor
         if predictor != 1:
             columns = decodeParms["/Columns"]
-            if predictor >= 10:
+            # PNG prediction:
+            if predictor >= 10 and predictor <= 15:
                 newdata = b""
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
@@ -119,14 +121,14 @@ class FlateDecode(object):
                             rowdata[i] = (rowdata[i] + prev_rowdata[i]) % 256
                     else:
                         # unsupported PNG filter
-                        from .utils import PdfReadError
-                        raise PdfReadError("unsupported PNG filter")
+                        raise PdfReadError("Unsupported PNG filter %r" % filterByte)
                     prev_rowdata = rowdata
+
                     newdata += bytes(rowdata[1:])
                 data = newdata
             else:
                 # unsupported predictor
-                assert False
+                raise PdfReadError("Unsupported flatedecode predictor %r" % predictor)
         return data
     decode = staticmethod(decode)
 
@@ -238,3 +240,4 @@ if __name__ == "__main__":
     """
     ascii85_originalText="Man is distinguished, not only by his reason, but by this singular passion from other animals, which is a lust of the mind, that by a perseverance of delight in the continued and indefatigable generation of knowledge, exceeds the short vehemence of any carnal pleasure."
     assert ASCII85Decode.decode(ascii85Test) == ascii85_originalText
+
