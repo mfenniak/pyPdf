@@ -1044,7 +1044,7 @@ class PageObject(DictionaryObject):
     # implementation-defined manner.  Default value: same as MediaBox.
     # <p>
     # Stability: Added in v1.4, will exist for all future v1.x releases.
-    cropBox = createRectangleAccessor("/CropBox", ("/CropBox",))
+    cropBox = createRectangleAccessor("/CropBox", ("/MediaBox",))
 
     ##
     # A rectangle (RectangleObject), expressed in default user space units,
