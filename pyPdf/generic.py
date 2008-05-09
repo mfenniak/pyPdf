@@ -203,6 +203,10 @@ class IndirectObject(PdfObject):
 
 
 class FloatObject(decimal.Decimal, PdfObject):
+    def __new__(cls, value="0", context=None):
+        return decimal.Decimal.__new__(cls, str(value), context)
+    def __repr__(self):
+        return str(self)
     def writeToStream(self, stream, encryption_key):
         stream.write(str(self))
 
@@ -622,8 +626,8 @@ class RectangleObject(ArrayObject):
         ArrayObject.__init__(self, [self.ensureIsNumber(x) for x in arr])
 
     def ensureIsNumber(self, value):
-        if not isinstance(value, NumberObject):
-            value = NumberObject(value)
+        if not isinstance(value, (NumberObject, FloatObject)):
+            value = FloatObject(value)
         return value
 
     def __repr__(self):
