@@ -1,3 +1,16 @@
+Version 1.11, 2008-05-09
+------------------------
+
+ - Patch from Hartmut Goebel to permit RectangleObjects to accept NumberObject
+   or FloatObject values.
+
+ - PDF compatibility fixes.
+
+ - Fix to read object xref stream in correct order.
+
+ - Fix for comments inside content streams.
+
+
 Version 1.10, 2007-10-04
 ------------------------
 
