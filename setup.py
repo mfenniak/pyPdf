@@ -20,7 +20,7 @@ It is therefore a useful tool for websites that manage or manipulate PDFs.
 
 setup(
         name="pyPdf",
-        version="1.11",
+        version="1.12-prerelease-A",
         description="PDF toolkit",
         long_description=long_description,
         author="Mathieu Fenniak",
