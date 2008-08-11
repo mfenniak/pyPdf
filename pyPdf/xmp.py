@@ -9,6 +9,7 @@ RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
 XMP_NAMESPACE = "http://ns.adobe.com/xap/1.0/"
 PDF_NAMESPACE = "http://ns.adobe.com/pdf/1.3/"
+XMPMM_NAMESPACE = "http://ns.adobe.com/xap/1.0/mm/"
 
 iso8601 = re.compile("""
         (?P<year>[0-9]{4})
@@ -275,5 +276,21 @@ class XmpInformation(PdfObject):
     # object.
     # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     xmp_metadataDate = property(_getter_single(XMP_NAMESPACE, "MetadataDate", _converter_date))
+
+    ##
+    # The name of the first known tool used to create the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmp_creatorTool = property(_getter_single(XMP_NAMESPACE, "CreatorTool", _converter_string))
+
+    ##
+    # The common identifier for all versions and renditions of this resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmpmm_documentId = property(_getter_single(XMPMM_NAMESPACE, "DocumentID", _converter_string))
+
+    ##
+    # An identifier for a specific incarnation of a document, updated each
+    # time a file is saved.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmpmm_instanceId = property(_getter_single(XMPMM_NAMESPACE, "InstanceID", _converter_string))
 
 
