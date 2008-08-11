@@ -311,7 +311,11 @@ class PdfFileReader(object):
     # instance that can be used to access XMP metadata from the document.
     # Can also return None if no metadata was found on the document root.
     def getXmpMetadata(self):
-        return self.trailer["/Root"].getXmpMetadata()
+        try:
+            self._override_encryption = True
+            return self.trailer["/Root"].getXmpMetadata()
+        finally:
+            self._override_encryption = False
 
     ##
     # Read-only property that accesses the {@link #PdfFileReader.getXmpData

@@ -226,9 +226,15 @@ def decodeStreamData(stream):
             data = ASCIIHexDecode.decode(data)
         elif filterType == "/ASCII85Decode":
             data = ASCII85Decode.decode(data)
+        elif filterType == "/Crypt":
+            decodeParams = stream.get("/DecodeParams", {})
+            if "/Name" not in decodeParams and "/Type" not in decodeParams:
+                pass
+            else:
+                raise NotImplementedError("/Crypt filter with /Name or /Type not supported yet")
         else:
             # unsupported filter
-            assert False
+            raise NotImplementedError("unsupported filter %s" % filterType)
     return data
 
 if __name__ == "__main__":
