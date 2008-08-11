@@ -8,6 +8,7 @@ from xml.dom.minidom import parseString
 RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 DC_NAMESPACE = "http://purl.org/dc/elements/1.1/"
 XMP_NAMESPACE = "http://ns.adobe.com/xap/1.0/"
+PDF_NAMESPACE = "http://ns.adobe.com/pdf/1.3/"
 
 iso8601 = re.compile("""
         (?P<year>[0-9]{4})
@@ -25,6 +26,8 @@ iso8601 = re.compile("""
         )?
         """, re.VERBOSE)
 
+##
+# An object that represents Adobe XMP metadata.
 class XmpInformation(PdfObject):
 
     def __init__(self, stream):
@@ -83,11 +86,13 @@ class XmpInformation(PdfObject):
                 return cached
             retval = []
             for element in self.getElement("", namespace, name):
-                bag = element.getElementsByTagNameNS(RDF_NAMESPACE, "Bag")[0]
-                for item in bag.getElementsByTagNameNS(RDF_NAMESPACE, "li"):
-                    value = self._getText(item)
-                    value = converter(value)
-                    retval.append(value)
+                bags = element.getElementsByTagNameNS(RDF_NAMESPACE, "Bag")
+                if len(bags):
+                    for bag in bags:
+                        for item in bag.getElementsByTagNameNS(RDF_NAMESPACE, "li"):
+                            value = self._getText(item)
+                            value = converter(value)
+                            retval.append(value)
             ns_cache = self.cache.setdefault(namespace, {})
             ns_cache[name] = retval
             return retval
@@ -100,11 +105,37 @@ class XmpInformation(PdfObject):
                 return cached
             retval = []
             for element in self.getElement("", namespace, name):
-                bag = element.getElementsByTagNameNS(RDF_NAMESPACE, "Seq")[0]
-                for item in bag.getElementsByTagNameNS(RDF_NAMESPACE, "li"):
-                    value = self._getText(item)
-                    value = converter(value)
+                seqs = element.getElementsByTagNameNS(RDF_NAMESPACE, "Seq")
+                if len(seqs):
+                    for seq in seqs:
+                        for item in seq.getElementsByTagNameNS(RDF_NAMESPACE, "li"):
+                            value = self._getText(item)
+                            value = converter(value)
+                            retval.append(value)
+                else:
+                    value = converter(self._getText(element))
                     retval.append(value)
+            ns_cache = self.cache.setdefault(namespace, {})
+            ns_cache[name] = retval
+            return retval
+        return get
+
+    def _getter_langalt(namespace, name, converter):
+        def get(self):
+            cached = self.cache.get(namespace, {}).get(name)
+            if cached:
+                return cached
+            retval = {}
+            for element in self.getElement("", namespace, name):
+                alts = element.getElementsByTagNameNS(RDF_NAMESPACE, "Alt")
+                if len(alts):
+                    for alt in alts:
+                        for item in alt.getElementsByTagNameNS(RDF_NAMESPACE, "li"):
+                            value = self._getText(item)
+                            value = converter(value)
+                            retval[item.getAttribute("xml:lang")] = value
+                else:
+                    retval["x-default"] = converter(self._getText(element))
             ns_cache = self.cache.setdefault(namespace, {})
             ns_cache[name] = retval
             return retval
@@ -115,24 +146,114 @@ class XmpInformation(PdfObject):
             cached = self.cache.get(namespace, {}).get(name)
             if cached:
                 return cached
+            value = None
             for element in self.getElement("", namespace, name):
                 if element.nodeType == element.ATTRIBUTE_NODE:
                     value = element.nodeValue
                 else:
                     value = self._getText(element)
                 break
-            value = converter(value)
+            if value != None:
+                value = converter(value)
             ns_cache = self.cache.setdefault(namespace, {})
             ns_cache[name] = value
             return value
         return get
 
+    ##
+    # Contributors to the resource (other than the authors).  An unsorted
+    # array of names.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     dc_contributor = property(_getter_bag(DC_NAMESPACE, "contributor", _converter_string))
+
+    ##
+    # Text describing the extent or scope of the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     dc_coverage = property(_getter_single(DC_NAMESPACE, "coverage", _converter_string))
+
+    ##
+    # A sorted array of names of the authors of the resource, listed in order
+    # of precedence.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     dc_creator = property(_getter_seq(DC_NAMESPACE, "creator", _converter_string))
+
+    ##
+    # A sorted array of dates (datetime.datetime instances) of signifigance to
+    # the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     dc_date = property(_getter_seq(DC_NAMESPACE, "date", _converter_date))
 
-    def get_xmpCreateDate(self):
-        element = self.getElement("", XMP_NAMESPACE, "CreateDate")
-        print repr(element)
+    ##
+    # A language-keyed dictionary of textual descriptions of the content of the
+    # resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_description = property(_getter_langalt(DC_NAMESPACE, "description", _converter_string))
+
+    ##
+    # The mime-type of the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_format = property(_getter_single(DC_NAMESPACE, "format", _converter_string))
+
+    ##
+    # Unique identifier of the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_identifier = property(_getter_single(DC_NAMESPACE, "identifier", _converter_string))
+
+    ##
+    # An unordered array specifying the languages used in the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_language = property(_getter_bag(DC_NAMESPACE, "language", _converter_string))
+
+    ##
+    # An unordered array of publisher names.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_publisher = property(_getter_bag(DC_NAMESPACE, "publisher", _converter_string))
+
+    ##
+    # An unordered array of text descriptions of relationships to other
+    # documents.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_relation = property(_getter_bag(DC_NAMESPACE, "relation", _converter_string))
+
+    ##
+    # A language-keyed dictionary of textual descriptions of the rights the
+    # user has to this resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_rights = property(_getter_langalt(DC_NAMESPACE, "rights", _converter_string))
+
+    ##
+    # Unique identifier of the work from which this resource was derived.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_source = property(_getter_single(DC_NAMESPACE, "source", _converter_string))
+
+    ##
+    # An unordered array of descriptive phrases or keywrods that specify the
+    # topic of the content of the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_subject = property(_getter_bag(DC_NAMESPACE, "subject", _converter_string))
+
+    ##
+    # A language-keyed dictionary of the title of the resource.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_title = property(_getter_langalt(DC_NAMESPACE, "title", _converter_string))
+
+    ##
+    # An unordered array of textual descriptions of the document type.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    dc_type = property(_getter_bag(DC_NAMESPACE, "type", _converter_string))
+
+    ##
+    # An unformatted text string representing document keywords.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    pdf_keywords = property(_getter_single(PDF_NAMESPACE, "Keywords", _converter_string))
+
+    ##
+    # The PDF file version, for example 1.0, 1.3.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    pdf_pdfversion = property(_getter_single(PDF_NAMESPACE, "PDFVersion", _converter_string))
+
+    ##
+    # The name of the tool that created the PDF document.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    pdf_producer = property(_getter_single(PDF_NAMESPACE, "Producer", _converter_string))
 
