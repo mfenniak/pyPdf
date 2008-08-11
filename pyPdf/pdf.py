@@ -303,6 +303,24 @@ class PdfFileReader(object):
     documentInfo = property(lambda self: self.getDocumentInfo(), None, None)
 
     ##
+    # Retrieves XMP (Extensible Metadata Platform) data from the PDF document
+    # root.
+    # <p>
+    # Stability: Added in v1.12, will exist for all future v1.x releases.
+    # @return Returns a {@link #generic.XmpInformation XmlInformation}
+    # instance that can be used to access XMP metadata from the document.
+    # Can also return None if no metadata was found on the document root.
+    def getXmpMetadata(self):
+        return self.trailer["/Root"].getXmpMetadata()
+
+    ##
+    # Read-only property that accesses the {@link #PdfFileReader.getXmpData
+    # getXmpData} function.
+    # <p>
+    # Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmpMetadata = property(lambda self: self.getXmpMetadata(), None, None)
+
+    ##
     # Calculates the number of pages in this PDF file.
     # <p>
     # Stability: Added in v1.0, will exist for all v1.x releases.

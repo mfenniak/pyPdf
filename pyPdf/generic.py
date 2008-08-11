@@ -465,6 +465,32 @@ class DictionaryObject(dict, PdfObject):
     def __getitem__(self, key):
         return dict.__getitem__(self, key).getObject()
 
+    ##
+    # Retrieves XMP (Extensible Metadata Platform) data relevant to the
+    # this object, if available.
+    # <p>
+    # Stability: Added in v1.12, will exist for all future v1.x releases.
+    # @return Returns a {@link #xmp.XmpInformation XmlInformation} instance
+    # that can be used to access XMP metadata from the document.  Can also
+    # return None if no metadata was found on the document root.
+    def getXmpMetadata(self):
+        metadata = self.get("/Metadata", None)
+        if metadata == None:
+            return None
+        metadata = metadata.getObject()
+        import xmp
+        if not isinstance(metadata, xmp.XmpInformation):
+            metadata = xmp.XmpInformation(metadata)
+            self[NameObject("/Metadata")] = metadata
+        return metadata
+
+    ##
+    # Read-only property that accesses the {@link
+    # #DictionaryObject.getXmpData getXmpData} function.
+    # <p>
+    # Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmpMetadata = property(lambda self: self.getXmpMetadata(), None, None)
+
     def writeToStream(self, stream, encryption_key):
         stream.write("<<\n")
         for key, value in self.items():
@@ -606,7 +632,7 @@ class EncodedStreamObject(StreamObject):
             return self.decodedSelf.getData()
         else:
             # create decoded object
-            decoded = StreamObject()
+            decoded = DecodedStreamObject()
             decoded._data = filters.decodeStreamData(self)
             for key, value in self.items():
                 if not key in ("/Length", "/Filter", "/DecodeParms"):
