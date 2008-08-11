@@ -179,7 +179,7 @@ class XmpInformation(PdfObject):
 
     ##
     # A sorted array of dates (datetime.datetime instances) of signifigance to
-    # the resource.
+    # the resource.  The dates and times are in UTC.
     # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     dc_date = property(_getter_seq(DC_NAMESPACE, "date", _converter_date))
 
@@ -256,4 +256,24 @@ class XmpInformation(PdfObject):
     # The name of the tool that created the PDF document.
     # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     pdf_producer = property(_getter_single(PDF_NAMESPACE, "Producer", _converter_string))
+
+    ##
+    # The date and time the resource was originally created.  The date and
+    # time are returned as a UTC datetime.datetime object.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmp_createDate = property(_getter_single(XMP_NAMESPACE, "CreateDate", _converter_date))
+    
+    ##
+    # The date and time the resource was last modified.  The date and time
+    # are returned as a UTC datetime.datetime object.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmp_modifyDate = property(_getter_single(XMP_NAMESPACE, "ModifyDate", _converter_date))
+
+    ##
+    # The date and time that any metadata for this resource was last
+    # changed.  The date and time are returned as a UTC datetime.datetime
+    # object.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    xmp_metadataDate = property(_getter_single(XMP_NAMESPACE, "MetadataDate", _converter_date))
+
 
