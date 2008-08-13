@@ -103,7 +103,7 @@ class FlateDecode(object):
             columns = decodeParms["/Columns"]
             # PNG prediction:
             if predictor >= 10 and predictor <= 15:
-                newdata = b""
+                newdata = bytearray()
                 # PNG prediction can vary from row to row
                 rowlength = columns + 1
                 assert len(data) % rowlength == 0
@@ -124,7 +124,7 @@ class FlateDecode(object):
                         raise PdfReadError("Unsupported PNG filter %r" % filterByte)
                     prev_rowdata = rowdata
 
-                    newdata += bytes(rowdata[1:])
+                    newdata.extend(rowdata[1:])
                 data = newdata
             else:
                 # unsupported predictor
