@@ -476,7 +476,7 @@ class DictionaryObject(dict, PdfObject):
         if metadata == None:
             return None
         metadata = metadata.getObject()
-        import xmp
+        from . import xmp
         if not isinstance(metadata, xmp.XmpInformation):
             metadata = xmp.XmpInformation(metadata)
             self[NameObject("/Metadata")] = metadata
