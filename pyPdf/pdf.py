@@ -688,41 +688,42 @@ class PdfFileReader(object):
                 assert xrefstream["/Type"] == "/XRef"
                 self.cacheIndirectObject(generation, idnum, xrefstream)
                 streamData = StringIO(xrefstream.getData())
-                num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
+                idx_pairs = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
                 entrySizes = xrefstream.get("/W")
-                cnt = 0
-                while cnt < size:
-                    for i in range(len(entrySizes)):
-                        d = streamData.read(entrySizes[i])
-                        di = convertToInt(d, entrySizes[i])
-                        if i == 0:
-                            xref_type = di
-                        elif i == 1:
-                            if xref_type == 0:
-                                next_free_object = di
-                            elif xref_type == 1:
-                                byte_offset = di
-                            elif xref_type == 2:
-                                objstr_num = di
-                        elif i == 2:
-                            if xref_type == 0:
-                                next_generation = di
-                            elif xref_type == 1:
-                                generation = di
-                            elif xref_type == 2:
-                                obstr_idx = di
-                    if xref_type == 0:
-                        pass
-                    elif xref_type == 1:
-                        if not self.xref.has_key(generation):
-                            self.xref[generation] = {}
-                        if not num in self.xref[generation]:
-                            self.xref[generation][num] = byte_offset
-                    elif xref_type == 2:
-                        if not num in self.xref_objStm:
-                            self.xref_objStm[num] = [objstr_num, obstr_idx]
-                    cnt += 1
-                    num += 1
+                for num, size in self._pairs(idx_pairs):
+                    cnt = 0
+                    while cnt < size:
+                        for i in range(len(entrySizes)):
+                            d = streamData.read(entrySizes[i])
+                            di = convertToInt(d, entrySizes[i])
+                            if i == 0:
+                                xref_type = di
+                            elif i == 1:
+                                if xref_type == 0:
+                                    next_free_object = di
+                                elif xref_type == 1:
+                                    byte_offset = di
+                                elif xref_type == 2:
+                                    objstr_num = di
+                            elif i == 2:
+                                if xref_type == 0:
+                                    next_generation = di
+                                elif xref_type == 1:
+                                    generation = di
+                                elif xref_type == 2:
+                                    obstr_idx = di
+                        if xref_type == 0:
+                            pass
+                        elif xref_type == 1:
+                            if not self.xref.has_key(generation):
+                                self.xref[generation] = {}
+                            if not num in self.xref[generation]:
+                                self.xref[generation][num] = byte_offset
+                        elif xref_type == 2:
+                            if not num in self.xref_objStm:
+                                self.xref_objStm[num] = [objstr_num, obstr_idx]
+                        cnt += 1
+                        num += 1
                 trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
                 for key in trailerKeys:
                     if xrefstream.has_key(key) and not self.trailer.has_key(key):
@@ -745,6 +746,14 @@ class PdfFileReader(object):
                     # no xref table found at specified location
                     assert False
                     break
+
+    def _pairs(self, array):
+        i = 0
+        while True:
+            yield array[i], array[i+1]
+            i += 2
+            if (i+1) >= len(array):
+                break
 
     def readNextEndLine(self, stream):
         line = ""
