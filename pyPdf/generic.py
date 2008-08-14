@@ -236,7 +236,7 @@ class NumberObject(int, PdfObject):
 def createStringObject(string):
     if isinstance(string, str):
         return TextStringObject(string)
-    elif isinstance(string, bytes):
+    elif isinstance(string, bytes) or isinstance(string, bytearray):
         if string.startswith(codecs.BOM_UTF16_BE):
             retval = TextStringObject(string.decode("utf-16"))
             retval.autodetect_utf16 = True
@@ -258,7 +258,7 @@ def createStringObject(string):
 
 def readHexStringFromStream(stream):
     stream.read(1)
-    txt = b""
+    txt = bytearray()
     x = b""
     while True:
         tok = readNonWhitespace(stream)
@@ -266,19 +266,19 @@ def readHexStringFromStream(stream):
             break
         x += tok
         if len(x) == 2:
-            txt += bytes.fromhex(x.decode("ascii"))
+            txt.extend(bytes.fromhex(x.decode("ascii")))
             x = b""
     if len(x) == 1:
         x += b"0"
     if len(x) == 2:
-        txt += bytes.fromhex(x)
+        txt.extend(bytes.fromhex(x))
     return createStringObject(txt)
 
 
 def readStringFromStream(stream):
     tok = stream.read(1)
     parens = 1
-    txt = b""
+    txt = bytearray()
     while True:
         tok = stream.read(1)
         if tok == b"(":
@@ -322,7 +322,7 @@ def readStringFromStream(stream):
                 tok = b''
             else:
                 raise utils.PdfReadError("Unexpected escaped string")
-        txt += tok
+        txt.extend(tok)
     return createStringObject(txt)
 
 
