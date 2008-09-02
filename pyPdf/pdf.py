@@ -1127,7 +1127,15 @@ class ContentStream(DecodedStreamObject):
                 break
             stream.seek(-1, 1)
             if peek.isalpha() or peek == "'" or peek == '"':
-                operator = readUntilWhitespace(stream, maxchars=2)
+                operator = ""
+                while True:
+                    tok = stream.read(1)
+                    if tok.isspace() or tok in NameObject.delimiterCharacters:
+                        stream.seek(-1, 1)
+                        break
+                    elif tok == '':
+                        break
+                    operator += tok
                 if operator == "BI":
                     # begin inline image - a completely different parsing
                     # mechanism is required, of course... thanks buddy...
