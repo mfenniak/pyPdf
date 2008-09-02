@@ -1,9 +1,12 @@
-Version 1.12, 2008...
----------------------
+Version 1.12, 2008-09-02
+------------------------
 
  - Added support for XMP metadata.
 
  - Fix reading files with xref streams with multiple /Index values.
+
+ - Fix extracting content streams that use graphics operators longer than 2
+   characters.  Affects merging PDF files.
 
 
 Version 1.11, 2008-05-09
