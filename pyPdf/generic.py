@@ -299,7 +299,7 @@ def readStringFromStream(stream):
             elif tok == "t":
                 tok = "\t"
             elif tok == "b":
-                tok == "\b"
+                tok = "\b"
             elif tok == "f":
                 tok = "\f"
             elif tok == "(":
