@@ -1154,6 +1154,56 @@ class PageObject(DictionaryObject):
                                                  ctm[2][0], ctm[2][1]])
 
     ##
+    # Applys a transformation matrix the page.
+    #
+    # @param ctm   A 6 elements tuple containing the operands of the
+    #              transformation matrix
+    def addTransformation(self, ctm):
+        originalContent = self.getContents()
+        if originalContent is not None:
+            newContent = PageObject._addTransformationMatrix(
+                originalContent, self.pdf, ctm)
+            newContent = PageObject._pushPopGS(newContent, self.pdf)
+            self[NameObject('/Contents')] = newContent
+
+    ##
+    # Scales a page by the given factors by appling a transformation
+    # matrix to its content and updating the page size.
+    #
+    # @param sx The scaling factor on horizontal axis
+    # @param sy The scaling factor on vertical axis
+    def scale(self, sx, sy):
+        self.addTransformation([sx, 0,
+                                0,  sy,
+                                0,  0])
+        self.mediaBox = RectangleObject([
+            float(self.mediaBox.getLowerLeft_x()) * sx,
+            float(self.mediaBox.getLowerLeft_y()) * sy,
+            float(self.mediaBox.getUpperRight_x()) * sx,
+            float(self.mediaBox.getUpperRight_y()) * sy])
+
+    ##
+    # Scales a page by the given factor by appling a transformation
+    # matrix to its content and updating the page size.
+    #
+    # @param factor The scaling factor
+    def scaleBy(self, factor):
+        self.scale(factor, factor)
+
+    ##
+    # Scales a page to the specified dimentions by appling a
+    # transformation matrix to its content and updating the page size.
+    #
+    # @param width The new width
+    # @param height The new heigth
+    def scaleTo(self, width, height):
+        sx = width / (self.mediaBox.getUpperRight_x() -
+                      self.mediaBox.getLowerLeft_x ())
+        sy = height / (self.mediaBox.getUpperRight_y() -
+                       self.mediaBox.getLowerLeft_x ())
+        self.scale(sx, sy)
+
+    ##
     # Compresses the size of this page by joining all content streams and
     # applying a FlateDecode filter.
     # <p>
