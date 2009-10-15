@@ -960,6 +960,15 @@ class PageObject(DictionaryObject):
     _pushPopGS = staticmethod(_pushPopGS)
 
     ##
+    # Returns the /Contents object, or None if it doesn't exist.
+    # /Contents is optionnal, as described in PDF Reference  7.7.3.3
+    def getContents(self):
+      if self.has_key("/Contents"):
+        return self["/Contents"].getObject()
+      else:
+        return None
+
+    ##
     # Merges the content streams of two pages into one.  Resource references
     # (i.e. fonts) are maintained from both pages.  The mediabox/cropbox/etc
     # of this page are not altered.  The parameter page's content stream will
@@ -995,13 +1004,17 @@ class PageObject(DictionaryObject):
 
         newContentArray = ArrayObject()
 
-        originalContent = self["/Contents"].getObject()
-        newContentArray.append(PageObject._pushPopGS(originalContent, self.pdf))
+        originalContent = self.getContents()
+        if originalContent is not None:
+            newContentArray.append(PageObject._pushPopGS(
+                  originalContent, self.pdf))
 
-        page2Content = page2['/Contents'].getObject()
-        page2Content = PageObject._contentStreamRename(page2Content, rename, self.pdf)
-        page2Content = PageObject._pushPopGS(page2Content, self.pdf)
-        newContentArray.append(page2Content)
+        page2Content = page2.getContents()
+        if page2Content is not None:
+            page2Content = PageObject._contentStreamRename(
+                page2Content, rename, self.pdf)
+            page2Content = PageObject._pushPopGS(page2Content, self.pdf)
+            newContentArray.append(page2Content)
 
         self[NameObject('/Contents')] = ContentStream(newContentArray, self.pdf)
         self[NameObject('/Resources')] = newResources
@@ -1014,10 +1027,11 @@ class PageObject(DictionaryObject):
     # However, it is possible that this function will perform no action if
     # content stream compression becomes "automatic" for some reason.
     def compressContentStreams(self):
-        content = self["/Contents"].getObject()
-        if not isinstance(content, ContentStream):
-            content = ContentStream(content, self.pdf)
-        self[NameObject("/Contents")] = content.flateEncode()
+        content = self.getContents()
+        if content is not None:
+            if not isinstance(content, ContentStream):
+                content = ContentStream(content, self.pdf)
+            self[NameObject("/Contents")] = content.flateEncode()
 
     ##
     # Locate all text drawing commands, in the order they are provided in the
