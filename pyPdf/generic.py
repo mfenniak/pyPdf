@@ -206,9 +206,13 @@ class FloatObject(decimal.Decimal, PdfObject):
     def __new__(cls, value="0", context=None):
         return decimal.Decimal.__new__(cls, str(value), context)
     def __repr__(self):
-        return str(self)
+        if self == self.to_integral():
+            return str(self.quantize(decimal.Decimal(1)))
+        else:
+            # XXX: this adds useless extraneous zeros.
+            return "%.5f" % self
     def writeToStream(self, stream, encryption_key):
-        stream.write(str(self))
+        stream.write(repr(self))
 
 
 class NumberObject(int, PdfObject):
