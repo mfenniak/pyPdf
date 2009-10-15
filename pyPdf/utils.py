@@ -99,6 +99,12 @@ def RC4_encrypt(key, plaintext):
         retval += chr(ord(plaintext[x]) ^ t)
     return retval
 
+def matrixMultiply(a, b):
+    return [[sum([float(i)*float(j)
+                  for i, j in zip(row, col)]
+                ) for col in zip(*b)]
+            for row in a]
+
 class PdfReadError(Exception):
     pass
 

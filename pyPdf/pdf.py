@@ -40,6 +40,7 @@ It may be a solid base for future PDF file work in Python.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
+import math
 import struct
 try:
     from cStringIO import StringIO
@@ -1029,6 +1030,128 @@ class PageObject(DictionaryObject):
 
         self[NameObject('/Contents')] = ContentStream(newContentArray, self.pdf)
         self[NameObject('/Resources')] = newResources
+
+    ##
+    # This is similar to mergePage, but a transformation matrix is
+    # applied to the merged stream.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param ctm   A 6 elements tuple containing the operands of the
+    #              transformation matrix
+    def mergeTransformedPage(self, page2, ctm):
+        page2Content = page2.getContents()
+        if page2Content is not None:
+            page2Content = PageObject._addTransformationMatrix(
+                page2Content, page2.pdf, ctm)
+            page2[NameObject('/Contents')] = page2Content
+        self.mergePage(page2)
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is scaled
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param factor The scaling factor
+    def mergeScaledPage(self, page2, factor):
+        # CTM to scale : [ sx 0 0 sy 0 0 ]
+        return self.mergeTransformedPage(page2, [factor, 0,
+                                                 0,      factor,
+                                                 0,      0])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is rotated
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param rotation The angle of the rotation, in degrees
+    def mergeRotatedPage(self, page2, rotation):
+        rotation = math.radians(rotation)
+        return self.mergeTransformedPage(page2,
+            [math.cos(rotation),  math.sin(rotation),
+             -math.sin(rotation), math.cos(rotation),
+             0,                   0])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param tx    The translation on X axis
+    # @param tx    The translation on Y axis
+    def mergeTranslatedPage(self, page2, tx, ty):
+        return self.mergeTransformedPage(page2, [1,  0,
+                                                 0,  1,
+                                                 tx, ty])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is rotated
+    # and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param rotation The angle of the rotation, in degrees
+    # @param factor The scaling factor
+    def mergeRotatedScaledPage(self, page2, rotation, scale):
+        rotation = math.radians(rotation)
+        rotating = [[math.cos(rotation), math.sin(rotation),0],
+                    [-math.sin(rotation),math.cos(rotation), 0],
+                    [0,                  0,                  1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(rotating, scaling)
+
+        return self.mergeTransformedPage(page2,
+                                         [ctm[0][0], ctm[0][1],
+                                          ctm[1][0], ctm[1][1],
+                                          ctm[2][0], ctm[2][1]])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated
+    # and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param scale The scaling factor
+    # @param tx    The translation on X axis
+    # @param tx    The translation on Y axis
+    def mergeScaledTranslatedPage(self, page2, scale, tx, ty):
+        translation = [[1, 0, 0],
+                       [0, 1, 0],
+                       [tx,ty,1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(scaling, translation)
+
+        return self.mergeTransformedPage(page2, [ctm[0][0], ctm[0][1],
+                                                 ctm[1][0], ctm[1][1],
+                                                 ctm[2][0], ctm[2][1]])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated,
+    # rotated and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param tx    The translation on X axis
+    # @param ty    The translation on Y axis
+    # @param rotation The angle of the rotation, in degrees
+    # @param scale The scaling factor
+    def mergeRotatedScaledTranslatedPage(self, page2, rotation, scale, tx, ty):
+        translation = [[1, 0, 0],
+                       [0, 1, 0],
+                       [tx,ty,1]]
+        rotation = math.radians(rotation)
+        rotating = [[math.cos(rotation), math.sin(rotation),0],
+                    [-math.sin(rotation),math.cos(rotation), 0],
+                    [0,                  0,                  1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(rotating, scaling)
+        ctm = utils.matrixMultiply(ctm, translation)
+
+        return self.mergeTransformedPage(page2, [ctm[0][0], ctm[0][1],
+                                                 ctm[1][0], ctm[1][1],
+                                                 ctm[2][0], ctm[2][1]])
 
     ##
     # Compresses the size of this page by joining all content streams and
