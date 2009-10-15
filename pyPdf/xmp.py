@@ -11,6 +11,28 @@ XMP_NAMESPACE = "http://ns.adobe.com/xap/1.0/"
 PDF_NAMESPACE = "http://ns.adobe.com/pdf/1.3/"
 XMPMM_NAMESPACE = "http://ns.adobe.com/xap/1.0/mm/"
 
+# What is the PDFX namespace, you might ask?  I might ask that too.  It's
+# a completely undocumented namespace used to place "custom metadata"
+# properties, which are arbitrary metadata properties with no semantic or
+# documented meaning.  Elements in the namespace are key/value-style storage,
+# where the element name is the key and the content is the value.  The keys
+# are transformed into valid XML identifiers by substituting an invalid
+# identifier character with \u2182 followed by the unicode hex ID of the
+# original character.  A key like "my car" is therefore "my\u21820020car".
+#
+# \u2182, in case you're wondering, is the unicode character
+# \u{ROMAN NUMERAL TEN THOUSAND}, a straightforward and obvious choice for
+# escaping characters.
+#
+# Intentional users of the pdfx namespace should be shot on sight.  A
+# custom data schema and sensical XML elements could be used instead, as is
+# suggested by Adobe's own documentation on XMP (under "Extensibility of
+# Schemas").
+#
+# Information presented here on the /pdfx/ schema is a result of limited
+# reverse engineering, and does not constitute a full specification.
+PDFX_NAMESPACE = "http://ns.adobe.com/pdfx/1.3/"
+
 iso8601 = re.compile("""
         (?P<year>[0-9]{4})
         (-
@@ -48,6 +70,17 @@ class XmpInformation(PdfObject):
                     yield attr
                 for element in desc.getElementsByTagNameNS(namespace, name):
                     yield element
+
+    def getNodesInNamespace(self, aboutUri, namespace):
+        for desc in self.rdfRoot.getElementsByTagNameNS(RDF_NAMESPACE, "Description"):
+            if desc.getAttributeNS(RDF_NAMESPACE, "about") == aboutUri:
+                for i in range(desc.attributes.length):
+                    attr = desc.attributes.item(i)
+                    if attr.namespaceURI == namespace:
+                        yield attr
+                for child in desc.childNodes:
+                    if child.namespaceURI == namespace:
+                        yield child
 
     def _getText(self, element):
         text = ""
@@ -292,5 +325,31 @@ class XmpInformation(PdfObject):
     # time a file is saved.
     # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
     xmpmm_instanceId = property(_getter_single(XMPMM_NAMESPACE, "InstanceID", _converter_string))
+
+    def custom_properties(self):
+        if not hasattr(self, "_custom_properties"):
+            self._custom_properties = {}
+            for node in self.getNodesInNamespace("", PDFX_NAMESPACE):
+                key = node.localName
+                while True:
+                    # see documentation about PDFX_NAMESPACE earlier in file
+                    idx = key.find("\u2182")
+                    if idx == -1:
+                        break
+                    key = key[:idx] + chr(int(key[idx+1:idx+5], base=16)) + key[idx+5:]
+                if node.nodeType == node.ATTRIBUTE_NODE:
+                    value = node.nodeValue
+                else:
+                    value = self._getText(node)
+                self._custom_properties[key] = value
+        return self._custom_properties
+
+    ##
+    # Retrieves custom metadata properties defined in the undocumented pdfx
+    # metadata schema.
+    # <p>Stability: Added in v1.12, will exist for all future v1.x releases.
+    # @return Returns a dictionary of key/value items for custom metadata
+    # properties.
+    custom_properties = property(custom_properties)
 
 

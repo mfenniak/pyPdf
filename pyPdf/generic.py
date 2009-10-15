@@ -80,7 +80,7 @@ def readObject(stream, pdf):
             return NumberObject.readFromStream(stream)
         peek = stream.read(20)
         stream.seek(-len(peek), 1) # reset to start
-        if re.match(r"(\d+)\s(\d+)\sR[^a-zA-Z]", peek) != None:
+        if re.match(r"(\d+)\s(\d+)\sR[^a-zA-Z]", peek.decode("ascii", "replace")) != None:
             return IndirectObject.readFromStream(stream, pdf)
         else:
             return NumberObject.readFromStream(stream)
@@ -206,9 +206,13 @@ class FloatObject(decimal.Decimal, PdfObject):
     def __new__(cls, value="0", context=None):
         return decimal.Decimal.__new__(cls, str(value), context)
     def __repr__(self):
-        return str(self)
+        if self == self.to_integral():
+            return str(self.quantize(decimal.Decimal(1)))
+        else:
+            # XXX: this adds useless extraneous zeros.
+            return "%.5f" % self
     def writeToStream(self, stream, encryption_key):
-        stream.write(str(self).encode("ascii"))
+        stream.write(repr(self).encode("ascii"))
 
 
 class NumberObject(int, PdfObject):
@@ -306,10 +310,17 @@ def readStringFromStream(stream):
             elif tok == b"\\":
                 tok = b"\\"
             elif tok in b"0123456789":
-                # Note: PDF spec says that octal characters don't need to
-                # provide 3 numbers.  Not supported here.
-                tok += stream.read(2)
-                tok = bytes([int(tok, base=8)])
+                # "The number ddd may consist of one, two, or three
+                # octal digits; high-order overflow shall be ignored.
+                # Three octal digits shall be used, with leading zeros
+                # as needed, if the next character of the string is also
+                # a digit." (PDF reference 7.3.4.2, p 16)
+                for i in range(2):
+                    ntok = stream.read(1)
+                    if ntok.isdigit():
+                        tok += ntok
+                    else:
+                        break
             elif tok in b"\n\r":
                 # This case is  hit when a backslash followed by a line
                 # break occurs.  If it's a multi-char EOL, consume the
@@ -704,6 +715,12 @@ class RectangleObject(ArrayObject):
 
     def setUpperRight(self, value):
         self[2], self[3] = [self.ensureIsNumber(x) for x in value]
+
+    def getWidth(self):
+        return self.getUpperRight_x() - self.getLowerLeft_x()
+
+    def getHeight(self):
+        return self.getUpperRight_y() - self.getLowerLeft_x()
 
     lowerLeft = property(getLowerLeft, setLowerLeft, None, None)
     lowerRight = property(getLowerRight, setLowerRight, None, None)

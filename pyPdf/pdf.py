@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+#
 # vim: sw=4:expandtab:foldmethod=marker
 #
 # Copyright (c) 2006, Mathieu Fenniak
@@ -38,6 +40,7 @@ It may be a solid base for future PDF file work in Python.
 __author__ = "Mathieu Fenniak"
 __author_email__ = "biziqe@mathieu.fenniak.net"
 
+import math
 import struct
 from io import BytesIO
 
@@ -90,6 +93,21 @@ class PdfFileWriter(object):
         return self._objects[ido.idnum - 1]
 
     ##
+    # Common method for inserting or adding a page to this PDF file.
+    #
+    # @param page The page to add to the document.  This argument should be
+    #             an instance of {@link #PageObject PageObject}.
+    # @param action The function which will insert the page in the dictionnary.
+    #               Takes: page list, page to add.
+    def _addPage(self, page, action):
+        assert page["/Type"] == "/Page"
+        page[NameObject("/Parent")] = self._pages
+        page = self._addObject(page)
+        pages = self.getObject(self._pages)
+        action(pages["/Kids"], page)
+        pages[NameObject("/Count")] = NumberObject(pages["/Count"] + 1)
+
+    ##
     # Adds a page to this PDF file.  The page is usually acquired from a
     # {@link #PdfFileReader PdfFileReader} instance.
     # <p>
@@ -98,12 +116,64 @@ class PdfFileWriter(object):
     # @param page The page to add to the document.  This argument should be
     #             an instance of {@link #PageObject PageObject}.
     def addPage(self, page):
-        assert page["/Type"] == "/Page"
-        page[NameObject("/Parent")] = self._pages
-        page = self._addObject(page)
+        self._addPage(page, list.append)
+
+    ##
+    # Insert a page in this PDF file.  The page is usually acquired from a
+    # {@link #PdfFileReader PdfFileReader} instance.
+    #
+    # @param page The page to add to the document.  This argument should be
+    #             an instance of {@link #PageObject PageObject}.
+    # @param index Position at which the page will be inserted.
+    def insertPage(self, page, index=0):
+        self._addPage(page, lambda l, p: l.insert(index, p))
+
+    ##
+    # Retrieves a page by number from this PDF file.
+    # @return Returns a {@link #PageObject PageObject} instance.
+    def getPage(self, pageNumber):
         pages = self.getObject(self._pages)
-        pages["/Kids"].append(page)
-        pages[NameObject("/Count")] = NumberObject(pages["/Count"] + 1)
+        # XXX: crude hack
+        return pages["/Kids"][pageNumber].getObject()
+
+    ##
+    # Return the number of pages.
+    # @return The number of pages.
+    def getNumPages(self):
+        pages = self.getObject(self._pages)
+        return int(pages[NameObject("/Count")])
+
+    ##
+    # Append a blank page to this PDF file and returns it. If no page size
+    # is specified, use the size of the last page; throw
+    # PageSizeNotDefinedError if it doesn't exist.
+    # @param width The width of the new page expressed in default user
+    # space units.
+    # @param height The height of the new page expressed in default user
+    # space units.
+    def addBlankPage(self, width=None, height=None):
+        page = PageObject.createBlankPage(self, width, height)
+        self.addPage(page)
+        return page
+
+    ##
+    # Insert a blank page to this PDF file and returns it. If no page size
+    # is specified, use the size of the page in the given index; throw
+    # PageSizeNotDefinedError if it doesn't exist.
+    # @param width  The width of the new page expressed in default user
+    #               space units.
+    # @param height The height of the new page expressed in default user
+    #               space units.
+    # @param index  Position to add the page.
+    def insertBlankPage(self, width=None, height=None, index=0):
+        if width is None or height is None and \
+                (self.getNumPages() - 1) >= index:
+            oldpage = self.getPage(index)
+            width = oldpage.mediaBox.getWidth()
+            height = oldpage.mediaBox.getHeight()
+        page = PageObject.createBlankPage(self, width, height)
+        self.insertPage(page, index)
+        return page
 
     ##
     # Encrypt this PDF file with the PDF Standard encryption handler.
@@ -685,41 +755,42 @@ class PdfFileReader(object):
                 assert xrefstream["/Type"] == "/XRef"
                 self.cacheIndirectObject(generation, idnum, xrefstream)
                 streamData = BytesIO(xrefstream.getData())
-                num, size = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
+                idx_pairs = xrefstream.get("/Index", [0, xrefstream.get("/Size")])
                 entrySizes = xrefstream.get("/W")
-                cnt = 0
-                while cnt < size:
-                    for i in range(len(entrySizes)):
-                        d = streamData.read(entrySizes[i])
-                        di = convertToInt(d, entrySizes[i])
-                        if i == 0:
-                            xref_type = di
-                        elif i == 1:
-                            if xref_type == 0:
-                                next_free_object = di
-                            elif xref_type == 1:
-                                byte_offset = di
-                            elif xref_type == 2:
-                                objstr_num = di
-                        elif i == 2:
-                            if xref_type == 0:
-                                next_generation = di
-                            elif xref_type == 1:
-                                generation = di
-                            elif xref_type == 2:
-                                obstr_idx = di
-                    if xref_type == 0:
-                        pass
-                    elif xref_type == 1:
-                        if generation not in self.xref:
-                            self.xref[generation] = {}
-                        if not num in self.xref[generation]:
-                            self.xref[generation][num] = byte_offset
-                    elif xref_type == 2:
-                        if not num in self.xref_objStm:
-                            self.xref_objStm[num] = [objstr_num, obstr_idx]
-                    cnt += 1
-                    num += 1
+                for num, size in self._pairs(idx_pairs):
+                    cnt = 0
+                    while cnt < size:
+                        for i in range(len(entrySizes)):
+                            d = streamData.read(entrySizes[i])
+                            di = convertToInt(d, entrySizes[i])
+                            if i == 0:
+                                xref_type = di
+                            elif i == 1:
+                                if xref_type == 0:
+                                    next_free_object = di
+                                elif xref_type == 1:
+                                    byte_offset = di
+                                elif xref_type == 2:
+                                    objstr_num = di
+                            elif i == 2:
+                                if xref_type == 0:
+                                    next_generation = di
+                                elif xref_type == 1:
+                                    generation = di
+                                elif xref_type == 2:
+                                    obstr_idx = di
+                        if xref_type == 0:
+                            pass
+                        elif xref_type == 1:
+                            if generation not in self.xref:
+                                self.xref[generation] = {}
+                            if not num in self.xref[generation]:
+                                self.xref[generation][num] = byte_offset
+                        elif xref_type == 2:
+                            if not num in self.xref_objStm:
+                                self.xref_objStm[num] = [objstr_num, obstr_idx]
+                        cnt += 1
+                        num += 1
                 trailerKeys = "/Root", "/Encrypt", "/Info", "/ID"
                 for key in trailerKeys:
                     if key in xrefstream and key not in self.trailer:
@@ -742,6 +813,14 @@ class PdfFileReader(object):
                     # no xref table found at specified location
                     assert False
                     break
+
+    def _pairs(self, array):
+        i = 0
+        while True:
+            yield array[i], array[i+1]
+            i += 2
+            if (i+1) >= len(array):
+                break
 
     def readNextEndLine(self, stream):
         line = b""
@@ -878,11 +957,44 @@ def createRectangleAccessor(name, fallback):
 ##
 # This class represents a single page within a PDF file.  Typically this object
 # will be created by accessing the {@link #PdfFileReader.getPage getPage}
-# function of the {@link #PdfFileReader PdfFileReader} class.
+# function of the {@link #PdfFileReader PdfFileReader} class, but it is
+# also possible to create an empty page with the createBlankPage static
+# method.
+# @param pdf PDF file the page belongs to (optional, defaults to None).
 class PageObject(DictionaryObject):
-    def __init__(self, pdf):
+    def __init__(self, pdf=None):
         DictionaryObject.__init__(self)
         self.pdf = pdf
+
+    ##
+    # Returns a new blank page.
+    # If width or height is None, try to get the page size from the
+    # last page of pdf. If pdf is None or contains no page, a
+    # PageSizeNotDefinedError is raised.
+    # @param pdf    PDF file the page belongs to
+    # @param width  The width of the new page expressed in default user
+    #               space units.
+    # @param height The height of the new page expressed in default user
+    #               space units.
+    def createBlankPage(pdf=None, width=None, height=None):
+        page = PageObject(pdf)
+
+        # Creates a new page (cf PDF Reference  7.7.3.3)
+        page.__setitem__(NameObject('/Type'), NameObject('/Page'))
+        page.__setitem__(NameObject('/Parent'), NullObject())
+        page.__setitem__(NameObject('/Resources'), DictionaryObject())
+        if width is None or height is None:
+            if pdf is not None and pdf.getNumPages() > 0:
+                lastpage = pdf.getPage(pdf.getNumPages() - 1)
+                width = lastpage.mediaBox.getWidth()
+                height = lastpage.mediaBox.getHeight()
+            else:
+                raise utils.PageSizeNotDefinedError()
+        page.__setitem__(NameObject('/MediaBox'),
+            RectangleObject([0, 0, width, height]))
+
+        return page
+    createBlankPage = staticmethod(createBlankPage)
 
     ##
     # Rotates a page clockwise by increments of 90 degrees.
@@ -919,7 +1031,7 @@ class PageObject(DictionaryObject):
                 renameRes[key] = newname
                 newRes[newname] = page2Res[key]
             elif key not in newRes:
-                newRes[key] = page2Res[key]
+                newRes[key] = page2Res.raw_get(key)
         return newRes, renameRes
     _mergeResources = staticmethod(_mergeResources)
 
@@ -945,6 +1057,26 @@ class PageObject(DictionaryObject):
         return stream
     _pushPopGS = staticmethod(_pushPopGS)
 
+    def _addTransformationMatrix(contents, pdf, ctm):
+        # adds transformation matrix at the beginning of the given
+        # contents stream.
+        a, b, c, d, e, f = ctm
+        contents = ContentStream(contents, pdf)
+        contents.operations.insert(0, [[FloatObject(a), FloatObject(b),
+            FloatObject(c), FloatObject(d), FloatObject(e),
+            FloatObject(f)], " cm"])
+        return contents
+    _addTransformationMatrix = staticmethod(_addTransformationMatrix)
+
+    ##
+    # Returns the /Contents object, or None if it doesn't exist.
+    # /Contents is optionnal, as described in PDF Reference  7.7.3.3
+    def getContents(self):
+      if "/Contents" in self:
+        return self["/Contents"].getObject()
+      else:
+        return None
+
     ##
     # Merges the content streams of two pages into one.  Resource references
     # (i.e. fonts) are maintained from both pages.  The mediabox/cropbox/etc
@@ -966,7 +1098,7 @@ class PageObject(DictionaryObject):
         originalResources = self["/Resources"].getObject()
         page2Resources = page2["/Resources"].getObject()
 
-        for res in "/ExtGState", "/Font", "/XObject", "/ColorSpace", "/Pattern", "/Shading":
+        for res in "/ExtGState", "/Font", "/XObject", "/ColorSpace", "/Pattern", "/Shading", "/Properties":
             new, newrename = PageObject._mergeResources(originalResources, page2Resources, res)
             if new:
                 newResources[NameObject(res)] = new
@@ -981,16 +1113,192 @@ class PageObject(DictionaryObject):
 
         newContentArray = ArrayObject()
 
-        originalContent = self["/Contents"].getObject()
-        newContentArray.append(PageObject._pushPopGS(originalContent, self.pdf))
+        originalContent = self.getContents()
+        if originalContent is not None:
+            newContentArray.append(PageObject._pushPopGS(
+                  originalContent, self.pdf))
 
-        page2Content = page2['/Contents'].getObject()
-        page2Content = PageObject._contentStreamRename(page2Content, rename, self.pdf)
-        page2Content = PageObject._pushPopGS(page2Content, self.pdf)
-        newContentArray.append(page2Content)
+        page2Content = page2.getContents()
+        if page2Content is not None:
+            page2Content = PageObject._contentStreamRename(
+                page2Content, rename, self.pdf)
+            page2Content = PageObject._pushPopGS(page2Content, self.pdf)
+            newContentArray.append(page2Content)
 
         self[NameObject('/Contents')] = ContentStream(newContentArray, self.pdf)
         self[NameObject('/Resources')] = newResources
+
+    ##
+    # This is similar to mergePage, but a transformation matrix is
+    # applied to the merged stream.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param ctm   A 6 elements tuple containing the operands of the
+    #              transformation matrix
+    def mergeTransformedPage(self, page2, ctm):
+        page2Content = page2.getContents()
+        if page2Content is not None:
+            page2Content = PageObject._addTransformationMatrix(
+                page2Content, page2.pdf, ctm)
+            page2[NameObject('/Contents')] = page2Content
+        self.mergePage(page2)
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is scaled
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param factor The scaling factor
+    def mergeScaledPage(self, page2, factor):
+        # CTM to scale : [ sx 0 0 sy 0 0 ]
+        return self.mergeTransformedPage(page2, [factor, 0,
+                                                 0,      factor,
+                                                 0,      0])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is rotated
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param rotation The angle of the rotation, in degrees
+    def mergeRotatedPage(self, page2, rotation):
+        rotation = math.radians(rotation)
+        return self.mergeTransformedPage(page2,
+            [math.cos(rotation),  math.sin(rotation),
+             -math.sin(rotation), math.cos(rotation),
+             0,                   0])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated
+    # by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param tx    The translation on X axis
+    # @param tx    The translation on Y axis
+    def mergeTranslatedPage(self, page2, tx, ty):
+        return self.mergeTransformedPage(page2, [1,  0,
+                                                 0,  1,
+                                                 tx, ty])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is rotated
+    # and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param rotation The angle of the rotation, in degrees
+    # @param factor The scaling factor
+    def mergeRotatedScaledPage(self, page2, rotation, scale):
+        rotation = math.radians(rotation)
+        rotating = [[math.cos(rotation), math.sin(rotation),0],
+                    [-math.sin(rotation),math.cos(rotation), 0],
+                    [0,                  0,                  1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(rotating, scaling)
+
+        return self.mergeTransformedPage(page2,
+                                         [ctm[0][0], ctm[0][1],
+                                          ctm[1][0], ctm[1][1],
+                                          ctm[2][0], ctm[2][1]])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated
+    # and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param scale The scaling factor
+    # @param tx    The translation on X axis
+    # @param tx    The translation on Y axis
+    def mergeScaledTranslatedPage(self, page2, scale, tx, ty):
+        translation = [[1, 0, 0],
+                       [0, 1, 0],
+                       [tx,ty,1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(scaling, translation)
+
+        return self.mergeTransformedPage(page2, [ctm[0][0], ctm[0][1],
+                                                 ctm[1][0], ctm[1][1],
+                                                 ctm[2][0], ctm[2][1]])
+
+    ##
+    # This is similar to mergePage, but the stream to be merged is translated,
+    # rotated and scaled by appling a transformation matrix.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged.
+    # @param tx    The translation on X axis
+    # @param ty    The translation on Y axis
+    # @param rotation The angle of the rotation, in degrees
+    # @param scale The scaling factor
+    def mergeRotatedScaledTranslatedPage(self, page2, rotation, scale, tx, ty):
+        translation = [[1, 0, 0],
+                       [0, 1, 0],
+                       [tx,ty,1]]
+        rotation = math.radians(rotation)
+        rotating = [[math.cos(rotation), math.sin(rotation),0],
+                    [-math.sin(rotation),math.cos(rotation), 0],
+                    [0,                  0,                  1]]
+        scaling = [[scale,0,    0],
+                   [0,    scale,0],
+                   [0,    0,    1]]
+        ctm = utils.matrixMultiply(rotating, scaling)
+        ctm = utils.matrixMultiply(ctm, translation)
+
+        return self.mergeTransformedPage(page2, [ctm[0][0], ctm[0][1],
+                                                 ctm[1][0], ctm[1][1],
+                                                 ctm[2][0], ctm[2][1]])
+
+    ##
+    # Applys a transformation matrix the page.
+    #
+    # @param ctm   A 6 elements tuple containing the operands of the
+    #              transformation matrix
+    def addTransformation(self, ctm):
+        originalContent = self.getContents()
+        if originalContent is not None:
+            newContent = PageObject._addTransformationMatrix(
+                originalContent, self.pdf, ctm)
+            newContent = PageObject._pushPopGS(newContent, self.pdf)
+            self[NameObject('/Contents')] = newContent
+
+    ##
+    # Scales a page by the given factors by appling a transformation
+    # matrix to its content and updating the page size.
+    #
+    # @param sx The scaling factor on horizontal axis
+    # @param sy The scaling factor on vertical axis
+    def scale(self, sx, sy):
+        self.addTransformation([sx, 0,
+                                0,  sy,
+                                0,  0])
+        self.mediaBox = RectangleObject([
+            float(self.mediaBox.getLowerLeft_x()) * sx,
+            float(self.mediaBox.getLowerLeft_y()) * sy,
+            float(self.mediaBox.getUpperRight_x()) * sx,
+            float(self.mediaBox.getUpperRight_y()) * sy])
+
+    ##
+    # Scales a page by the given factor by appling a transformation
+    # matrix to its content and updating the page size.
+    #
+    # @param factor The scaling factor
+    def scaleBy(self, factor):
+        self.scale(factor, factor)
+
+    ##
+    # Scales a page to the specified dimentions by appling a
+    # transformation matrix to its content and updating the page size.
+    #
+    # @param width The new width
+    # @param height The new heigth
+    def scaleTo(self, width, height):
+        sx = width / (self.mediaBox.getUpperRight_x() -
+                      self.mediaBox.getLowerLeft_x ())
+        sy = height / (self.mediaBox.getUpperRight_y() -
+                       self.mediaBox.getLowerLeft_x ())
+        self.scale(sx, sy)
 
     ##
     # Compresses the size of this page by joining all content streams and
@@ -1000,10 +1308,11 @@ class PageObject(DictionaryObject):
     # However, it is possible that this function will perform no action if
     # content stream compression becomes "automatic" for some reason.
     def compressContentStreams(self):
-        content = self["/Contents"].getObject()
-        if not isinstance(content, ContentStream):
-            content = ContentStream(content, self.pdf)
-        self[NameObject("/Contents")] = content.flateEncode()
+        content = self.getContents()
+        if content is not None:
+            if not isinstance(content, ContentStream):
+                content = ContentStream(content, self.pdf)
+            self[NameObject("/Contents")] = content.flateEncode()
 
     ##
     # Locate all text drawing commands, in the order they are provided in the
@@ -1115,7 +1424,15 @@ class ContentStream(DecodedStreamObject):
                 break
             stream.seek(-1, 1)
             if peek in b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' or peek == b"'" or peek == b'"':
-                operator = readUntilWhitespace(stream, maxchars=2)
+                operator = b""
+                while True:
+                    tok = stream.read(1)
+                    if tok == b'':
+                        break
+                    elif tok.isspace() or tok in NameObject.delimiterCharacters:
+                        stream.seek(-1, 1)
+                        break
+                    operator += tok
                 if operator == b"BI":
                     # begin inline image - a completely different parsing
                     # mechanism is required, of course... thanks buddy...
@@ -1125,13 +1442,13 @@ class ContentStream(DecodedStreamObject):
                 else:
                     self.operations.append((operands, operator))
                     operands = []
-            elif peek == '%':
+            elif peek == b'%':
                 # If we encounter a comment in the content stream, we have to
                 # handle it here.  Typically, readObject will handle
                 # encountering a comment -- but readObject assumes that
                 # following the comment must be the object we're trying to
                 # read.  In this case, it could be an operator instead.
-                while peek not in ('\r', '\n'):
+                while peek not in (b'\r', b'\n'):
                     peek = stream.read(1)
             else:
                 operands.append(readObject(stream, None))
