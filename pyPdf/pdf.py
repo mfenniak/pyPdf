@@ -132,6 +132,53 @@ class PdfFileWriter(object):
         self._addPage(page, lambda l, p: l.insert(index, p))
 
     ##
+    # Retrieves a page by number from this PDF file.
+    # @return Returns a {@link #PageObject PageObject} instance.
+    def getPage(self, pageNumber):
+        pages = self.getObject(self._pages)
+        # XXX: crude hack
+        return pages["/Kids"][pageNumber].getObject()
+
+    ##
+    # Return the number of pages.
+    # @return The number of pages.
+    def getNumPages(self):
+        pages = self.getObject(self._pages)
+        return int(pages[NameObject("/Count")])
+
+    ##
+    # Append a blank page to this PDF file and returns it. If no page size
+    # is specified, use the size of the last page; throw
+    # PageSizeNotDefinedError if it doesn't exist.
+    # @param width The width of the new page expressed in default user
+    # space units.
+    # @param height The height of the new page expressed in default user
+    # space units.
+    def addBlankPage(self, width=None, height=None):
+        page = PageObject.createBlankPage(self, width, height)
+        self.addPage(page)
+        return page
+
+    ##
+    # Insert a blank page to this PDF file and returns it. If no page size
+    # is specified, use the size of the page in the given index; throw
+    # PageSizeNotDefinedError if it doesn't exist.
+    # @param width  The width of the new page expressed in default user
+    #               space units.
+    # @param height The height of the new page expressed in default user
+    #               space units.
+    # @param index  Position to add the page.
+    def insertBlankPage(self, width=None, height=None, index=0):
+        if width is None or height is None and \
+                (self.getNumPages() - 1) >= index:
+            oldpage = self.getPage(index)
+            width = oldpage.mediaBox.getWidth()
+            height = oldpage.mediaBox.getHeight()
+        page = PageObject.createBlankPage(self, width, height)
+        self.insertPage(page, index)
+        return page
+
+    ##
     # Encrypt this PDF file with the PDF Standard encryption handler.
     # @param user_pwd The "user password", which allows for opening and reading
     # the PDF file with the restrictions provided.
@@ -913,11 +960,44 @@ def createRectangleAccessor(name, fallback):
 ##
 # This class represents a single page within a PDF file.  Typically this object
 # will be created by accessing the {@link #PdfFileReader.getPage getPage}
-# function of the {@link #PdfFileReader PdfFileReader} class.
+# function of the {@link #PdfFileReader PdfFileReader} class, but it is
+# also possible to create an empty page with the createBlankPage static
+# method.
+# @param pdf PDF file the page belongs to (optional, defaults to None).
 class PageObject(DictionaryObject):
-    def __init__(self, pdf):
+    def __init__(self, pdf=None):
         DictionaryObject.__init__(self)
         self.pdf = pdf
+
+    ##
+    # Returns a new blank page.
+    # If width or height is None, try to get the page size from the
+    # last page of pdf. If pdf is None or contains no page, a
+    # PageSizeNotDefinedError is raised.
+    # @param pdf    PDF file the page belongs to
+    # @param width  The width of the new page expressed in default user
+    #               space units.
+    # @param height The height of the new page expressed in default user
+    #               space units.
+    def createBlankPage(pdf=None, width=None, height=None):
+        page = PageObject(pdf)
+
+        # Creates a new page (cf PDF Reference  7.7.3.3)
+        page.__setitem__(NameObject('/Type'), NameObject('/Page'))
+        page.__setitem__(NameObject('/Parent'), NullObject())
+        page.__setitem__(NameObject('/Resources'), DictionaryObject())
+        if width is None or height is None:
+            if pdf is not None and pdf.getNumPages() > 0:
+                lastpage = pdf.getPage(pdf.getNumPages() - 1)
+                width = lastpage.mediaBox.getWidth()
+                height = lastpage.mediaBox.getHeight()
+            else:
+                raise utils.PageSizeNotDefinedError()
+        page.__setitem__(NameObject('/MediaBox'),
+            RectangleObject([0, 0, width, height]))
+
+        return page
+    createBlankPage = staticmethod(createBlankPage)
 
     ##
     # Rotates a page clockwise by increments of 90 degrees.

@@ -721,6 +721,12 @@ class RectangleObject(ArrayObject):
     def setUpperRight(self, value):
         self[2], self[3] = [self.ensureIsNumber(x) for x in value]
 
+    def getWidth(self):
+        return self.getUpperRight_x() - self.getLowerLeft_x()
+
+    def getHeight(self):
+        return self.getUpperRight_y() - self.getLowerLeft_x()
+
     lowerLeft = property(getLowerLeft, setLowerLeft, None, None)
     lowerRight = property(getLowerRight, setLowerRight, None, None)
     upperLeft = property(getUpperLeft, setUpperLeft, None, None)

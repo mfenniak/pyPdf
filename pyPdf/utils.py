@@ -105,7 +105,13 @@ def matrixMultiply(a, b):
                 ) for col in zip(*b)]
             for row in a]
 
-class PdfReadError(Exception):
+class PyPdfError(Exception):
+    pass
+
+class PdfReadError(PyPdfError):
+    pass
+
+class PageSizeNotDefinedError(PyPdfError):
     pass
 
 if __name__ == "__main__":
