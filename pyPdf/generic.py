@@ -309,7 +309,17 @@ def readStringFromStream(stream):
             elif tok == "\\":
                 tok = "\\"
             elif tok.isdigit():
-                tok += stream.read(2)
+                # "The number ddd may consist of one, two, or three
+                # octal digits; high-order overflow shall be ignored.
+                # Three octal digits shall be used, with leading zeros
+                # as needed, if the next character of the string is also
+                # a digit." (PDF reference 7.3.4.2, p 16)
+                for i in range(2):
+                    ntok = stream.read(1)
+                    if ntok.isdigit():
+                        tok += ntok
+                    else:
+                        break
                 tok = chr(int(tok, base=8))
             elif tok in "\n\r":
                 # This case is  hit when a backslash followed by a line
