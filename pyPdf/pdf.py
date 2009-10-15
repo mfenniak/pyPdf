@@ -931,7 +931,7 @@ class PageObject(DictionaryObject):
                 renameRes[key] = newname
                 newRes[newname] = page2Res[key]
             elif not newRes.has_key(key):
-                newRes[key] = page2Res[key]
+                newRes[key] = page2Res.raw_get(key)
         return newRes, renameRes
     _mergeResources = staticmethod(_mergeResources)
 
