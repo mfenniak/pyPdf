@@ -96,6 +96,21 @@ class PdfFileWriter(object):
         return self._objects[ido.idnum - 1]
 
     ##
+    # Common method for inserting or adding a page to this PDF file.
+    #
+    # @param page The page to add to the document.  This argument should be
+    #             an instance of {@link #PageObject PageObject}.
+    # @param action The function which will insert the page in the dictionnary.
+    #               Takes: page list, page to add.
+    def _addPage(self, page, action):
+        assert page["/Type"] == "/Page"
+        page[NameObject("/Parent")] = self._pages
+        page = self._addObject(page)
+        pages = self.getObject(self._pages)
+        action(pages["/Kids"], page)
+        pages[NameObject("/Count")] = NumberObject(pages["/Count"] + 1)
+
+    ##
     # Adds a page to this PDF file.  The page is usually acquired from a
     # {@link #PdfFileReader PdfFileReader} instance.
     # <p>
@@ -104,12 +119,17 @@ class PdfFileWriter(object):
     # @param page The page to add to the document.  This argument should be
     #             an instance of {@link #PageObject PageObject}.
     def addPage(self, page):
-        assert page["/Type"] == "/Page"
-        page[NameObject("/Parent")] = self._pages
-        page = self._addObject(page)
-        pages = self.getObject(self._pages)
-        pages["/Kids"].append(page)
-        pages[NameObject("/Count")] = NumberObject(pages["/Count"] + 1)
+        self._addPage(page, list.append)
+
+    ##
+    # Insert a page in this PDF file.  The page is usually acquired from a
+    # {@link #PdfFileReader PdfFileReader} instance.
+    #
+    # @param page The page to add to the document.  This argument should be
+    #             an instance of {@link #PageObject PageObject}.
+    # @param index Position at which the page will be inserted.
+    def insertPage(self, page, index=0):
+        self._addPage(page, lambda l, p: l.insert(index, p))
 
     ##
     # Encrypt this PDF file with the PDF Standard encryption handler.
