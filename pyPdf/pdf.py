@@ -989,7 +989,7 @@ class PageObject(DictionaryObject):
         originalResources = self["/Resources"].getObject()
         page2Resources = page2["/Resources"].getObject()
 
-        for res in "/ExtGState", "/Font", "/XObject", "/ColorSpace", "/Pattern", "/Shading":
+        for res in "/ExtGState", "/Font", "/XObject", "/ColorSpace", "/Pattern", "/Shading", "/Properties":
             new, newrename = PageObject._mergeResources(originalResources, page2Resources, res)
             if new:
                 newResources[NameObject(res)] = new
