@@ -959,6 +959,17 @@ class PageObject(DictionaryObject):
         return stream
     _pushPopGS = staticmethod(_pushPopGS)
 
+    def _addTransformationMatrix(contents, pdf, ctm):
+        # adds transformation matrix at the beginning of the given
+        # contents stream.
+        a, b, c, d, e, f = ctm
+        contents = ContentStream(contents, pdf)
+        contents.operations.insert(0, [[FloatObject(a), FloatObject(b),
+            FloatObject(c), FloatObject(d), FloatObject(e),
+            FloatObject(f)], " cm"])
+        return contents
+    _addTransformationMatrix = staticmethod(_addTransformationMatrix)
+
     ##
     # Returns the /Contents object, or None if it doesn't exist.
     # /Contents is optionnal, as described in PDF Reference  7.7.3.3
