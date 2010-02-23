@@ -42,7 +42,7 @@ __author_email__ = "biziqe@mathieu.fenniak.net"
 
 import math
 import struct
-import sys
+from sys import version_info
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -54,8 +54,13 @@ import warnings
 from generic import *
 from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
 
-if sys.version_info < ( 2, 4 ):
+if version_info < ( 2, 4 ):
    from sets import ImmutableSet as frozenset
+
+if version_info < ( 2, 5 ):
+    from md5 import md5
+else:
+    from hashlib import md5
 
 ##
 # This class supports writing PDF files out, given pages produced by another
@@ -192,7 +197,7 @@ class PdfFileWriter(object):
     # encryption.  When false, 40bit encryption will be used.  By default, this
     # flag is on.
     def encrypt(self, user_pwd, owner_pwd = None, use_128bit = True):
-        import md5, time, random
+        import time, random
         if owner_pwd == None:
             owner_pwd = user_pwd
         if use_128bit:
@@ -206,8 +211,8 @@ class PdfFileWriter(object):
         # permit everything:
         P = -1
         O = ByteStringObject(_alg33(owner_pwd, user_pwd, rev, keylen))
-        ID_1 = md5.new(repr(time.time())).digest()
-        ID_2 = md5.new(repr(random.random())).digest()
+        ID_1 = md5(repr(time.time())).digest()
+        ID_2 = md5(repr(random.random())).digest()
         self._ID = ArrayObject((ByteStringObject(ID_1), ByteStringObject(ID_2)))
         if rev == 2:
             U, key = _alg34(user_pwd, O, P, ID_1)
@@ -233,7 +238,7 @@ class PdfFileWriter(object):
     # @param stream An object to write the file to.  The object must support
     # the write method, and the tell method, similar to a file object.
     def write(self, stream):
-        import struct, md5
+        import struct
 
         externalReferenceMap = {}
         self.stack = []
@@ -254,7 +259,7 @@ class PdfFileWriter(object):
                 pack2 = struct.pack("<i", 0)[:2]
                 key = self._encrypt_key + pack1 + pack2
                 assert len(key) == (len(self._encrypt_key) + 5)
-                md5_hash = md5.new(key).digest()
+                md5_hash = md5(key).digest()
                 key = md5_hash[:min(16, len(self._encrypt_key) + 5)]
             obj.writeToStream(stream, key)
             stream.write("\nendobj\n")
@@ -627,12 +632,12 @@ class PdfFileReader(object):
             if not hasattr(self, '_decryption_key'):
                 raise Exception, "file has not been decrypted"
             # otherwise, decrypt here...
-            import struct, md5
+            import struct
             pack1 = struct.pack("<i", indirectReference.idnum)[:3]
             pack2 = struct.pack("<i", indirectReference.generation)[:2]
             key = self._decryption_key + pack1 + pack2
             assert len(key) == (len(self._decryption_key) + 5)
-            md5_hash = md5.new(key).digest()
+            md5_hash = md5(key).digest()
             key = md5_hash[:min(16, len(self._decryption_key) + 5)]
             retval = self._decryptObject(retval, key)
 
@@ -1672,8 +1677,8 @@ def _alg32(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     password = (password + _encryption_padding)[:32]
     # 2. Initialize the MD5 hash function and pass the result of step 1 as
     # input to this function.
-    import md5, struct
-    m = md5.new(password)
+    import struct
+    m = md5(password)
     # 3. Pass the value of the encryption dictionary's /O entry to the MD5 hash
     # function.
     m.update(owner_entry)
@@ -1697,7 +1702,7 @@ def _alg32(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     # /Length entry.
     if rev >= 3:
         for i in range(50):
-            md5_hash = md5.new(md5_hash[:keylen]).digest()
+            md5_hash = md5(md5_hash[:keylen]).digest()
     # 9. Set the encryption key to the first n bytes of the output from the
     # final MD5 hash, where n is always 5 for revision 2 but, for revision 3 or
     # greater, depends on the value of the encryption dictionary's /Length
@@ -1739,14 +1744,13 @@ def _alg33_1(password, rev, keylen):
     password = (password + _encryption_padding)[:32]
     # 2. Initialize the MD5 hash function and pass the result of step 1 as
     # input to this function.
-    import md5
-    m = md5.new(password)
+    m = md5(password)
     # 3. (Revision 3 or greater) Do the following 50 times: Take the output
     # from the previous MD5 hash and pass it as input into a new MD5 hash.
     md5_hash = m.digest()
     if rev >= 3:
         for i in range(50):
-            md5_hash = md5.new(md5_hash).digest()
+            md5_hash = md5(md5_hash).digest()
     # 4. Create an RC4 encryption key using the first n bytes of the output
     # from the final MD5 hash, where n is always 5 for revision 2 but, for
     # revision 3 or greater, depends on the value of the encryption
@@ -1776,8 +1780,7 @@ def _alg35(password, rev, keylen, owner_entry, p_entry, id1_entry, metadata_encr
     key = _alg32(password, rev, keylen, owner_entry, p_entry, id1_entry)
     # 2. Initialize the MD5 hash function and pass the 32-byte padding string
     # shown in step 1 of Algorithm 3.2 as input to this function. 
-    import md5
-    m = md5.new()
+    m = md5()
     m.update(_encryption_padding)
     # 3. Pass the first element of the file's file identifier array (the value
     # of the ID entry in the document's trailer dictionary; see Table 3.13 on
