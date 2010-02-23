@@ -1099,7 +1099,23 @@ class PageObject(DictionaryObject):
     # @param page2 An instance of {@link #PageObject PageObject} to be merged
     #              into this one.
     def mergePage(self, page2):
+        self._mergePage(page2)
 
+    ##
+    # Actually merges the content streams of two pages into one. Resource
+    # references (i.e. fonts) are maintained from both pages. The
+    # mediabox/cropbox/etc of this page are not altered. The parameter page's
+    # content stream will be added to the end of this page's content stream,
+    # meaning that it will be drawn after, or "on top" of this page.
+    #
+    # @param page2 An instance of {@link #PageObject PageObject} to be merged
+    #              into this one.
+    # @param page2transformation A fuction which applies a transformation to
+    #                            the content stream of page2. Takes: page2
+    #                            contents stream. Must return: new contents
+    #                            stream. If omitted, the content stream will
+    #                            not be modified.
+    def _mergePage(self, page2, page2transformation=None):
         # First we work on merging the resource dictionaries.  This allows us
         # to find out what symbols in the content streams we might need to
         # rename.
@@ -1131,6 +1147,8 @@ class PageObject(DictionaryObject):
 
         page2Content = page2.getContents()
         if page2Content is not None:
+            if page2transformation is not None:
+                page2Content = page2transformation(page2Content)
             page2Content = PageObject._contentStreamRename(
                 page2Content, rename, self.pdf)
             page2Content = PageObject._pushPopGS(page2Content, self.pdf)
@@ -1147,12 +1165,8 @@ class PageObject(DictionaryObject):
     # @param ctm   A 6 elements tuple containing the operands of the
     #              transformation matrix
     def mergeTransformedPage(self, page2, ctm):
-        page2Content = page2.getContents()
-        if page2Content is not None:
-            page2Content = PageObject._addTransformationMatrix(
-                page2Content, page2.pdf, ctm)
-            page2[NameObject('/Contents')] = page2Content
-        self.mergePage(page2)
+        self._mergePage(page2, lambda page2Content:
+            PageObject._addTransformationMatrix(page2Content, page2.pdf, ctm))
 
     ##
     # This is similar to mergePage, but the stream to be merged is scaled
