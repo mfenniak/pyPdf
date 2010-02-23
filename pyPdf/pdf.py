@@ -42,6 +42,7 @@ __author_email__ = "biziqe@mathieu.fenniak.net"
 
 import math
 import struct
+import sys
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -52,7 +53,9 @@ import utils
 import warnings
 from generic import *
 from utils import readNonWhitespace, readUntilWhitespace, ConvertFunctionsToVirtualList
-from sets import ImmutableSet
+
+if sys.version_info < ( 2, 4 ):
+   from sets import ImmutableSet as frozenset
 
 ##
 # This class supports writing PDF files out, given pages produced by another
@@ -1109,8 +1112,8 @@ class PageObject(DictionaryObject):
 
         # Combine /ProcSet sets.
         newResources[NameObject("/ProcSet")] = ArrayObject(
-            ImmutableSet(originalResources.get("/ProcSet", ArrayObject()).getObject()).union(
-                ImmutableSet(page2Resources.get("/ProcSet", ArrayObject()).getObject())
+            frozenset(originalResources.get("/ProcSet", ArrayObject()).getObject()).union(
+                frozenset(page2Resources.get("/ProcSet", ArrayObject()).getObject())
             )
         )
 
