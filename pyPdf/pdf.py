@@ -241,6 +241,25 @@ class PdfFileWriter(object):
         import struct
 
         externalReferenceMap = {}
+
+        # PDF objects sometimes have circular references to their /Page objects
+        # inside their object tree (for example, annotations).  Those will be
+        # indirect references to objects that we've recreated in this PDF.  To
+        # address this problem, PageObject's store their original object
+        # reference number, and we add it to the external reference map before
+        # we sweep for indirect references.  This forces self-page-referencing
+        # trees to reference the correct new object location, rather than
+        # copying in a new copy of the page object.
+        for objIndex in xrange(len(self._objects)):
+            obj = self._objects[objIndex]
+            if isinstance(obj, PageObject) and obj.indirectRef != None:
+                data = obj.indirectRef
+                if not externalReferenceMap.has_key(data.pdf):
+                    externalReferenceMap[data.pdf] = {}
+                if not externalReferenceMap[data.pdf].has_key(data.generation):
+                    externalReferenceMap[data.pdf][data.generation] = {}
+                externalReferenceMap[data.pdf][data.generation][data.idnum] = IndirectObject(objIndex + 1, 0, self)
+
         self.stack = []
         self._sweepIndirectReferences(externalReferenceMap, self._root)
         del self.stack
@@ -565,7 +584,7 @@ class PdfFileReader(object):
     pages = property(lambda self: ConvertFunctionsToVirtualList(self.getNumPages, self.getPage),
             None, None)
 
-    def _flatten(self, pages=None, inherit=None):
+    def _flatten(self, pages=None, inherit=None, indirectRef=None):
         inheritablePageAttributes = (
             NameObject("/Resources"), NameObject("/MediaBox"),
             NameObject("/CropBox"), NameObject("/Rotate")
@@ -582,14 +601,17 @@ class PdfFileReader(object):
                 if pages.has_key(attr):
                     inherit[attr] = pages[attr]
             for page in pages["/Kids"]:
-                self._flatten(page.getObject(), inherit)
+                addt = {}
+                if isinstance(page, IndirectObject):
+                    addt["indirectRef"] = page
+                self._flatten(page.getObject(), inherit, **addt)
         elif t == "/Page":
             for attr,value in inherit.items():
                 # if the page has it's own value, it does not inherit the
                 # parent's value:
                 if not pages.has_key(attr):
                     pages[attr] = value
-            pageObj = PageObject(self)
+            pageObj = PageObject(self, indirectRef)
             pageObj.update(pages)
             self.flattenedPages.append(pageObj)
 
@@ -973,9 +995,11 @@ def createRectangleAccessor(name, fallback):
 # method.
 # @param pdf PDF file the page belongs to (optional, defaults to None).
 class PageObject(DictionaryObject):
-    def __init__(self, pdf=None):
+    def __init__(self, pdf=None, indirectRef=None):
         DictionaryObject.__init__(self)
         self.pdf = pdf
+        # Stores the original indirect reference to this object in its source PDF
+        self.indirectRef = indirectRef
 
     ##
     # Returns a new blank page.
